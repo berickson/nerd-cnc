@@ -75,7 +75,7 @@ const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0,
   
       // Remove previous STL meshes and bounding boxes
       sceneRef.current!.children
-        .filter(obj => obj.userData.isSTL || obj.userData.isBoundingBox)
+        .filter(obj => obj.userData.isSTL || obj.userData.isBoundingBox || obj.userData.isToolPath)
         .forEach(obj => sceneRef.current!.remove(obj));
   
       const loader = new STLLoader();
