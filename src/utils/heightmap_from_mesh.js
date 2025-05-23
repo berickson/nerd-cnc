@@ -30,13 +30,13 @@ function heightmap_from_mesh(geometry, grid) {
     });
   }
   // log unset cells
-  for (let iy = 0; iy < grid.res_y; iy++) {
-  for (let ix = 0; ix < grid.res_x; ix++) {
-    if (heightmap[iy][ix] === -Infinity) {
-      console.log(`Unset cell: (${ix},${iy})`);
-    }
-  }
-}
+//   for (let iy = 0; iy < grid.res_y; iy++) {
+//   for (let ix = 0; ix < grid.res_x; ix++) {
+//     if (heightmap[iy][ix] === -Infinity) {
+//       console.log(`Unset cell: (${ix},${iy})`);
+//     }
+//   }
+// }
 
   return heightmap;
 }

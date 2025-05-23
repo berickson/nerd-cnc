@@ -10,15 +10,62 @@ const StartPage: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene>(null);
   const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
+  const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
+  const controlsRef = useRef<OrbitControls | null>(null);
 
   const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
+
+const fitCameraToObject = (
+  camera: THREE.OrthographicCamera,
+  controls: OrbitControls,
+  box: THREE.Box3,
+  offset: number = 1.25
+) => {
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  
+  // Get the max dimension for scaling
+  const maxDim = Math.max(size.x, size.y, size.z);
+  
+  // Get the center of the object
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  
+  // Calculate camera position
+  const distance = maxDim * offset;
+  camera.position.set(
+    center.x + distance,
+    center.y + distance,
+    center.z + distance
+  );
+  camera.lookAt(center);
+  
+  // Calculate the new frustum size
+  const aspect = mountRef.current ? mountRef.current.clientWidth / mountRef.current.clientHeight : 1;
+  const newFrustumSize = maxDim * offset;
+  
+  // Update camera frustum
+  camera.left = -newFrustumSize * aspect;
+  camera.right = newFrustumSize * aspect;
+  camera.top = newFrustumSize;
+  camera.bottom = -newFrustumSize;
+  camera.near = -distance * 2;
+  camera.far = distance * 2;
+  
+  camera.updateProjectionMatrix();
+  
+  // Update controls
+  controls.target.copy(center);
+  controls.update();
+};
   useEffect(() => {
     if (!mountRef.current) return;
 
     // Set up scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
+
     scene.background = new THREE.Color(0x222222);
 
     // Set up camera
@@ -36,6 +83,7 @@ const StartPage: React.FC = () => {
     );
     camera.position.set(2, 2, 2); // or any nonzero vector
     camera.lookAt(0, 0, 0);
+    cameraRef.current = camera;
 
     // Set up renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -44,7 +92,7 @@ const StartPage: React.FC = () => {
 
     // Add OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
-
+    controlsRef.current = controls;
 
     // Animation loop
     const animate = () => {
@@ -94,6 +142,9 @@ const StartPage: React.FC = () => {
         boxHelper.userData.isBoundingBox = true;
         sceneRef.current!.add(boxHelper);
 
+        if (cameraRef.current && controlsRef.current) {
+          fitCameraToObject(cameraRef.current, controlsRef.current, box);
+        }
         // Set bounding box size in state
         const size = new THREE.Vector3();
         box.getSize(size);
@@ -119,7 +170,7 @@ const grid = {
 };
 const heightmap = heightmap_from_mesh(geometry, grid);
 
-//toolpath_points_ref.current = []; // Clear previous toolpath points
+toolpath_points_ref.current = []; // Clear previous toolpath points
 let reverse = false;
 const points_per_line = 100;
 for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver / ((maxY - minY) / grid.res_y)))) {
@@ -129,7 +180,7 @@ for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver
     const x = minX + (maxX - minX) * (x_idx / grid.res_x);
     const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
     linePoints.push(new THREE.Vector3(x, y, z));
-    //toolpath_points_ref.current.push({ x, y, z });
+    toolpath_points_ref.current.push({ x, y, z });
   }
   if (reverse) linePoints.reverse();
   const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
@@ -219,21 +270,21 @@ for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver
             height: '100vh',
           }}
         />
-        {/* <button
+        <button
           style={{ position: 'absolute', top: 100, left: 20, zIndex: 10 }}
           onClick={() => {
-            //const gcode = generate_gcode(toolpath_points_ref.current); // toolpath: your array of points
-            //const blob = new Blob([gcode], { type: 'text/plain' });
-            //const url = URL.createObjectURL(blob);
-            //const a = document.createElement('a');
-            //a.href = url;
-            //a.download = 'toolpath.nc';
-            //a.click();
-            //URL.revokeObjectURL(url);
+            const gcode = generate_gcode(toolpath_points_ref.current); // toolpath: your array of points
+            const blob = new Blob([gcode], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'toolpath.nc';
+            a.click();
+            URL.revokeObjectURL(url);
           }}
         >
           Export G-code
-        </button> */}
+        </button>
         
       </div>
       
