@@ -226,13 +226,7 @@ const StartPage: React.FC = () => {
             toolpath_points_ref.current.push({ x, y, z });
           }
           if (reverse) linePoints.reverse();
-          // const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
-          // const line = new THREE.Line(
-          //   lineGeometry,
-          //   new THREE.LineBasicMaterial({ color: 0x00ff00 })
-          // );
-          // line.userData.isToolPath = true;
-          // scene_ref.current!.add(line);
+
           const positions = [];
           for (const pt of linePoints) {
             positions.push(pt.x, pt.y, pt.z);
@@ -338,7 +332,6 @@ const StartPage: React.FC = () => {
           height: '100vh',
         }}
       />
-      {/* ...rest of your 3D canvas and UI... */}
     </div>
   );
 
