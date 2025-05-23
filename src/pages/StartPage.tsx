@@ -50,8 +50,8 @@ const fitCameraToObject = (
   camera.right = newFrustumSize * aspect;
   camera.top = newFrustumSize;
   camera.bottom = -newFrustumSize;
-  camera.near = -distance * 2;
-  camera.far = distance * 2;
+  camera.near = -distance * 10;
+  camera.far = distance * 10;
   
   camera.updateProjectionMatrix();
   
@@ -78,8 +78,8 @@ const fitCameraToObject = (
       frustumSize * aspect / 2, // right
       frustumSize / 2,          // top
       -frustumSize / 2,          // bottom
-      -100,                      // near
-      100                       // far
+      -1000,                      // near
+      1000                       // far
     );
     camera.position.set(2, 2, 2); // or any nonzero vector
     camera.lookAt(0, 0, 0);
