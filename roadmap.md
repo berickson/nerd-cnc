@@ -1,5 +1,19 @@
 # Project Roadmap & TODO
 
+## Next Steps: Tool Definition and Stock Simulation
+
+- [ ] Minimal tool definition (object with diameter and type, e.g. flat)
+    - [ ] Add tool data structure (e.g. { diameter: number, type: 'flat' })
+    - [ ] UI for selecting tool diameter and type (flat only at first)
+    - [ ] Pass tool definition to toolpath and simulation logic
+
+- [ ] Stock simulation (material removal)
+    - [ ] Use tool definition for material removal (simulate flat endmill)
+    - [ ] Visualize updated stock after each toolpath segment
+    - [ ] Add unit tests for stock update logic (given tool, path, and initial stock, check result)
+
+- [ ] Extend tool definition for more shapes (ball, V-bit, etc.) after flat tool works
+
 ## Features
 - [ ] G-code export for toolpaths
     - [x] Basic G-code generation from toolpath
@@ -8,10 +22,16 @@
     - [ ] G-code preview in UI
     - [ ] Support for multiple toolpaths/operations
     - [ ] Test with real-world toolpaths and G-code viewers
+- [ ] Tool definition (at minimum: diameter, type/shape)
+    - [ ] UI for selecting tool type and diameter
+    - [ ] Use tool definition in toolpath and simulation
+- [ ] Stock simulation (visualize material removal as toolpaths are executed)
+    - [ ] Use tool shape for material removal
+    - [ ] Visualize updated stock after each toolpath segment- 
 - [ ] Tool shape selection (flat, ball, V-bit, etc.)
 - [ ] Tool visualization in 3D view
-- [ ] Stock simulation (material removal)
 - [ ] Advanced G-code options (feeds, speeds, tool changes)
+- [ ] Adaptive paths to minimize errors - e.g. clearing uses large steps, and vertical and horizontal plans and step sizes adjust to geometry and tool
 - [ ] Export toolpath as CSV
 - [ ] UI: axis/grid helpers
 - [ ] UI: loading/progress for large files
@@ -36,9 +56,3 @@
 - [ ] Playback/scrub through toolpath simulation
 - [ ] Support for multiple tools/operations
 - [ ] Save/load project state
-
-## Fix: Heightmap edge-case for triangle edges/vertices
-
-- Problem: When a grid sample lands exactly on a triangle edge or vertex, the cell may not be updated, causing the mesh/toolpath to drop to z=0 or -Infinity.
-- Solution: In `sample_triangle`, ensure that all grid cells whose centers are on the triangle edge or vertex are included. Consider relaxing the epsilon in `point_in_triangle`, or always update the cell if it overlaps the triangle (not just if the center is inside).
-- Add unit tests for edge and vertex cases.
