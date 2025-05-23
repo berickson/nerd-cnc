@@ -137,7 +137,12 @@ test('sample_triangle covers edge and vertex cases', () => {
   sample_triangle(triangle, grid, (ix, iy, z) => {
     hits.push({ ix, iy, z });
   });
-  // Should cover both (1,0), (0,1), and (1,1) at least
-  expect(hits.some(h => h.ix === 1 && h.iy === 1)).toBe(true);
+  // Only cells whose centers are inside or on the edge should be hit
+  // For this triangle and grid, that's (0,0) and (1,0)
+  expect(hits.some(h => h.ix === 0 && h.iy === 0)).toBe(true);
+  expect(hits.some(h => h.ix === 1 && h.iy === 0)).toBe(true);
+  // (1,1) and (0,1) should NOT be hit
+  expect(hits.some(h => h.ix === 1 && h.iy === 1)).toBe(false);
+  expect(hits.some(h => h.ix === 0 && h.iy === 1)).toBe(false);
   expect(hits.every(h => h.z === 1)).toBe(true);
 });
