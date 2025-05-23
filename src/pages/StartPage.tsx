@@ -7,11 +7,11 @@ import { generate_gcode } from '../utils/gcode_generator';
 
 
 const StartPage: React.FC = () => {
-  const mountRef = useRef<HTMLDivElement>(null);
-  const sceneRef = useRef<THREE.Scene>(null);
+  const mount_ref = useRef<HTMLDivElement>(null);
+  const scene_ref = useRef<THREE.Scene>(null);
   const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
-  const cameraRef = useRef<THREE.OrthographicCamera | null>(null);
-  const controlsRef = useRef<OrbitControls | null>(null);
+  const camera_ref = useRef<THREE.OrthographicCamera | null>(null);
+  const controls_ref = useRef<OrbitControls | null>(null);
 
   const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
@@ -42,7 +42,7 @@ const fitCameraToObject = (
   camera.lookAt(center);
   
   // Calculate the new frustum size
-  const aspect = mountRef.current ? mountRef.current.clientWidth / mountRef.current.clientHeight : 1;
+  const aspect = mount_ref.current ? mount_ref.current.clientWidth / mount_ref.current.clientHeight : 1;
   const newFrustumSize = maxDim * offset;
   
   // Update camera frustum
@@ -60,17 +60,17 @@ const fitCameraToObject = (
   controls.update();
 };
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (!mount_ref.current) return;
 
     // Set up scene
     const scene = new THREE.Scene();
-    sceneRef.current = scene;
+    scene_ref.current = scene;
 
     scene.background = new THREE.Color(0x222222);
 
     // Set up camera
-    const width = mountRef.current.clientWidth;
-    const height = mountRef.current.clientHeight;
+    const width = mount_ref.current.clientWidth;
+    const height = mount_ref.current.clientHeight;
     const aspect = width / height;
     const frustumSize = 2; // Adjust for your scene scale
     const camera = new THREE.OrthographicCamera(
@@ -83,16 +83,16 @@ const fitCameraToObject = (
     );
     camera.position.set(2, 2, 2); // or any nonzero vector
     camera.lookAt(0, 0, 0);
-    cameraRef.current = camera;
+    camera_ref.current = camera;
 
     // Set up renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
-    mountRef.current.appendChild(renderer.domElement);
+    mount_ref.current.appendChild(renderer.domElement);
 
     // Add OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
-    controlsRef.current = controls;
+    controls_ref.current = controls;
 
     // Animation loop
     const animate = () => {
@@ -105,8 +105,8 @@ const fitCameraToObject = (
     // Cleanup
     return () => {
       renderer.dispose();
-      if (mountRef.current) {
-        mountRef.current.removeChild(renderer.domElement);
+      if (mount_ref.current) {
+        mount_ref.current.removeChild(renderer.domElement);
       }
     };
   }, []);
@@ -114,7 +114,7 @@ const fitCameraToObject = (
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file || !sceneRef.current) return;
+    if (!file || !scene_ref.current) return;
   
    setBoxSize(new THREE.Vector3(0, 0, 0));
     const reader = new FileReader();
@@ -123,16 +123,16 @@ const fitCameraToObject = (
       if (!contents) return;
   
       // Remove previous STL meshes and bounding boxes
-      sceneRef.current!.children
+      scene_ref.current!.children
         .filter(obj => obj.userData.isSTL || obj.userData.isBoundingBox || obj.userData.isToolPath)
-        .forEach(obj => sceneRef.current!.remove(obj));
+        .forEach(obj => scene_ref.current!.remove(obj));
   
       const loader = new STLLoader();
       const geometry = loader.parse(contents as ArrayBuffer);
       const material = new THREE.MeshNormalMaterial();
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.isSTL = true;
-      sceneRef.current!.add(mesh);
+      scene_ref.current!.add(mesh);
   
       // Compute and add bounding box helper
       geometry.computeBoundingBox();
@@ -140,10 +140,10 @@ const fitCameraToObject = (
         const box = new THREE.Box3().setFromObject(mesh);
         const boxHelper = new THREE.Box3Helper(box, 0xff0000);
         boxHelper.userData.isBoundingBox = true;
-        sceneRef.current!.add(boxHelper);
+        scene_ref.current!.add(boxHelper);
 
-        if (cameraRef.current && controlsRef.current) {
-          fitCameraToObject(cameraRef.current, controlsRef.current, box);
+        if (camera_ref.current && controls_ref.current) {
+          fitCameraToObject(camera_ref.current, controls_ref.current, box);
         }
         // Set bounding box size in state
         const size = new THREE.Vector3();
@@ -189,7 +189,7 @@ for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver
     new THREE.LineBasicMaterial({ color: 0x00ff00 })
   );
   line.userData.isToolPath = true;
-  sceneRef.current!.add(line);
+  scene_ref.current!.add(line);
   reverse = !reverse;
 }      }
     };
@@ -264,7 +264,7 @@ for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver
           }}
         />
         <div
-          ref={mountRef}
+          ref={mount_ref}
           style={{
             width: '100vw',
             height: '100vh',
