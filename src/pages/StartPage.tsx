@@ -29,6 +29,20 @@ const StartPage: React.FC = () => {
   const [show_mesh, set_show_mesh] = React.useState(true);
   const [show_toolpath, set_show_toolpath] = React.useState(true);
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
+  const [show_wireframe, set_show_wireframe] = React.useState(false);
+
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    scene_ref.current.children.forEach(obj => {
+      if (obj.userData.is_stl && obj instanceof THREE.Mesh) {
+        if (show_wireframe) {
+          obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
+        } else {
+          obj.material = new THREE.MeshNormalMaterial();
+        }
+      }
+    });
+  }, [show_wireframe, show_mesh]);
 
   useEffect(() => {
     // Update visibility of mesh, toolpath, and bounding box based on UI toggles
@@ -324,7 +338,18 @@ const StartPage: React.FC = () => {
             Show Bounding Box
           </label>
         </div>
-                {/* Bounding Box Info and Controls */}
+
+        {/* Wireframe Section */}
+        <label style={{ display: 'block', marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={show_wireframe}
+            onChange={e => set_show_wireframe(e.target.checked)}
+          />{' '}
+          Show Wireframe
+        </label>
+
+        {/* Bounding Box Info and Controls */}
         <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
           <div>
             <strong>Bounding Box:</strong>{' '}
