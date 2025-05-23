@@ -3,14 +3,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { heightmap_from_mesh } from '../utils/heightmap_from_mesh.js';
-//import { generate_gcode } from '../utils/gcode_generator';
+import { generate_gcode } from '../utils/gcode_generator';
 
-//const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
 
 const StartPage: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene>(null);
-const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
+  const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
+
+  const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
   useEffect(() => {
     if (!mountRef.current) return;
