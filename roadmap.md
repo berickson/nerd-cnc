@@ -36,3 +36,9 @@
 - [ ] Playback/scrub through toolpath simulation
 - [ ] Support for multiple tools/operations
 - [ ] Save/load project state
+
+## Fix: Heightmap edge-case for triangle edges/vertices
+
+- Problem: When a grid sample lands exactly on a triangle edge or vertex, the cell may not be updated, causing the mesh/toolpath to drop to z=0 or -Infinity.
+- Solution: In `sample_triangle`, ensure that all grid cells whose centers are on the triangle edge or vertex are included. Consider relaxing the epsilon in `point_in_triangle`, or always update the cell if it overlaps the triangle (not just if the center is inside).
+- Add unit tests for edge and vertex cases.

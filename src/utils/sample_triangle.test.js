@@ -124,3 +124,20 @@ test('sample_triangle does not update cells outside a thin, angled triangle', ()
   // Should only hit a thin band of cells
   expect(hits.length).toBeLessThanOrEqual(5);
 });
+
+test('sample_triangle covers edge and vertex cases', () => {
+  // Triangle exactly covers grid cell center at (1,1)
+  const triangle = [
+    { x: 0, y: 0, z: 1 },
+    { x: 2, y: 0, z: 1 },
+    { x: 1, y: 2, z: 1 }
+  ];
+  const grid = { min_x: 0, max_x: 2, min_y: 0, max_y: 2, res_x: 2, res_y: 2 };
+  const hits = [];
+  sample_triangle(triangle, grid, (ix, iy, z) => {
+    hits.push({ ix, iy, z });
+  });
+  // Should cover both (1,0), (0,1), and (1,1) at least
+  expect(hits.some(h => h.ix === 1 && h.iy === 1)).toBe(true);
+  expect(hits.every(h => h.z === 1)).toBe(true);
+});
