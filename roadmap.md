@@ -19,6 +19,9 @@
 
 ## UX / UI
 - [ ] Group controls (file input, export, settings) in a unified panel or toolbar
+    - [x] Implement vertical panel with sections: File, Export, Settings, Visibility
+    - [ ] Add section headers and visual separation
+    - [ ] Prepare for future collapsible/expandable sections
 - [ ] Toggle visibility of mesh, toolpath, and bounding box/object
 - [ ] Orientation cube to quickly set views - right, top, etc
 - [ ] Add G-code preview panel or modal
