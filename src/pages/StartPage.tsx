@@ -25,7 +25,7 @@ const StartPage: React.FC = () => {
   const camera_ref = useRef<THREE.OrthographicCamera | null>(null);
   const controls_ref = useRef<OrbitControls | null>(null);
 
-  const [boxSize, setBoxSize] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
+  const [boxSize, set_box_size] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
   const [show_mesh, set_show_mesh] = React.useState(true);
   const [show_toolpath, set_show_toolpath] = React.useState(true);
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
@@ -34,9 +34,9 @@ const StartPage: React.FC = () => {
     // Update visibility of mesh, toolpath, and bounding box based on UI toggles
     if (!scene_ref.current) return;
     scene_ref.current.children.forEach(obj => {
-      if (obj.userData.isSTL) obj.visible = show_mesh;
-      if (obj.userData.isToolPath) obj.visible = show_toolpath;
-      if (obj.userData.isBoundingBox) obj.visible = show_bounding_box;
+      if (obj.userData.is_stl) obj.visible = show_mesh;
+      if (obj.userData.is_tool_path) obj.visible = show_toolpath;
+      if (obj.userData.is_bounding_box) obj.visible = show_bounding_box;
     });
   }, [show_mesh, show_toolpath, show_bounding_box]);
 
@@ -106,7 +106,7 @@ const StartPage: React.FC = () => {
   }
 
 
-  const fitCameraToObject = (
+  const fit_camera_to_object = (
     camera: THREE.OrthographicCamera,
     controls: OrbitControls,
     box: THREE.Box3,
@@ -152,12 +152,12 @@ const StartPage: React.FC = () => {
 
 
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
     console.log('handleFileChange called', event.target.files?.[0]);
     const file = event.target.files?.[0];
     if (!file || !scene_ref.current) return;
 
-    setBoxSize(new THREE.Vector3(0, 0, 0));
+    set_box_size(new THREE.Vector3(0, 0, 0));
     const reader = new FileReader();
     reader.onload = function (e) {
       const contents = e.target?.result;
@@ -165,14 +165,14 @@ const StartPage: React.FC = () => {
 
       // Remove previous STL meshes and bounding boxes
       scene_ref.current!.children
-        .filter(obj => obj.userData.isSTL || obj.userData.isBoundingBox || obj.userData.isToolPath)
+        .filter(obj => obj.userData.is_stl || obj.userData.is_bounding_box || obj.userData.is_tool_path)
         .forEach(obj => scene_ref.current!.remove(obj));
 
       const loader = new STLLoader();
       const geometry = loader.parse(contents as ArrayBuffer);
       const material = new THREE.MeshNormalMaterial();
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.userData.isSTL = true;
+      mesh.userData.is_stl = true;
       scene_ref.current!.add(mesh);
 
       // Compute and add bounding box helper
@@ -181,16 +181,16 @@ const StartPage: React.FC = () => {
         const box = new THREE.Box3().setFromObject(mesh);
         const linewidth = compute_linewidth(box);
         const boxHelper = new THREE.Box3Helper(box, 0xff0000);
-        boxHelper.userData.isBoundingBox = true;
+        boxHelper.userData.is_bounding_box = true;
         scene_ref.current!.add(boxHelper);
 
         if (camera_ref.current && controls_ref.current) {
-          fitCameraToObject(camera_ref.current, controls_ref.current, box);
+          fit_camera_to_object(camera_ref.current, controls_ref.current, box);
         }
         // Set bounding box size in state
         const size = new THREE.Vector3();
         box.getSize(size);
-        setBoxSize(size);
+        set_box_size(size);
         // Tool path parameters
         const toolDiameter = 0.02; // meters
         const stepOver = toolDiameter * 0.7; // 70% of tool diameter
@@ -217,18 +217,18 @@ const StartPage: React.FC = () => {
         const points_per_line = 100;
         for (let y_idx = 0; y_idx < grid.res_y; y_idx += Math.max(1, Math.round(stepOver / ((maxY - minY) / grid.res_y)))) {
           const y = minY + (maxY - minY) * (y_idx / grid.res_y);
-          const linePoints: THREE.Vector3[] = [];
+          const line_points: THREE.Vector3[] = [];
           for (let x_idx = 0; x_idx < grid.res_x; x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))) {
             // here?
             const x = minX + (maxX - minX) * (x_idx / grid.res_x);
             const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
-            linePoints.push(new THREE.Vector3(x, y, z));
+            line_points.push(new THREE.Vector3(x, y, z));
             toolpath_points_ref.current.push({ x, y, z });
           }
-          if (reverse) linePoints.reverse();
+          if (reverse) line_points.reverse();
 
           const positions = [];
-          for (const pt of linePoints) {
+          for (const pt of line_points) {
             positions.push(pt.x, pt.y, pt.z);
           }
           const line_geometry = new LineGeometry();
@@ -241,7 +241,7 @@ const StartPage: React.FC = () => {
           line_material.resolution.set(window.innerWidth, window.innerHeight); // required for LineMaterial
           const line = new Line2(line_geometry, line_material);
           line.computeLineDistances();
-          line.userData.isToolPath = true;
+          line.userData.is_tool_path = true;
           scene_ref.current!.add(line);
           reverse = !reverse;
         }
@@ -276,7 +276,7 @@ const StartPage: React.FC = () => {
           <input
             type="file"
             accept=".stl"
-            onChange={handleFileChange}
+            onChange={handle_file_change}
             style={{ width: '100%' }}
           />
         </div>
@@ -323,6 +323,22 @@ const StartPage: React.FC = () => {
             />{' '}
             Show Bounding Box
           </label>
+        </div>
+                {/* Bounding Box Info and Controls */}
+        <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
+          <div>
+            <strong>Bounding Box:</strong>{' '}
+            {boxSize &&
+              `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <strong>3D Controls:</strong>
+            <div>
+              Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
+              Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
+              Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+            </div>
+          </div>
         </div>
       </div>
       <div
