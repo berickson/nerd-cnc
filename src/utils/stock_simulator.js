@@ -3,26 +3,29 @@
 
 // Create a heightmap stock object
 // width, height: mm, grid_size: mm, initial_height: mm
-function create_heightmap_stock(width, height, grid_size, initial_height) {
-  const nx = Math.ceil(width / grid_size);
-  const ny = Math.ceil(height / grid_size);
-  // 2D array of heights, initialized to initial_height
+// origin_x, origin_y: world coordinates of the lower-left corner (default 0,0)
+function create_heightmap_stock(width, height, grid_size, initial_height, origin_x = 0, origin_y = 0) {
+  // Ensure grid includes both origin and far corner
+  // Assumption: width/height are the full extents, so we need (max - min) / grid_size + 1 cells
+  const nx = Math.round(width / grid_size) + 1;
+  const ny = Math.round(height / grid_size) + 1;
   const heights = Array.from({ length: nx }, () =>
     Array.from({ length: ny }, () => initial_height)
   );
 
-  // Get the height at (x, y) in mm. Returns 0 if out of bounds.
+  // Get the height at world (x, y)
   function get_height(x, y) {
-    const ix = Math.floor(x / grid_size);
-    const iy = Math.floor(y / grid_size);
+    // Map world x/y to grid indices using origin
+    const ix = Math.round((x - origin_x) / grid_size);
+    const iy = Math.round((y - origin_y) / grid_size);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
     return heights[ix][iy];
   }
 
-  // Set the height at (x, y) in mm. No-op if out of bounds.
+  // Set the height at world (x, y)
   function set_height(x, y, z) {
-    const ix = Math.floor(x / grid_size);
-    const iy = Math.floor(y / grid_size);
+    const ix = Math.round((x - origin_x) / grid_size);
+    const iy = Math.round((y - origin_y) / grid_size);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return;
     heights[ix][iy] = z;
   }
@@ -32,7 +35,9 @@ function create_heightmap_stock(width, height, grid_size, initial_height) {
     set_height,
     width,
     height,
-    grid_size
+    grid_size,
+    origin_x,
+    origin_y
   };
 }
 
@@ -83,54 +88,29 @@ if (toolpath.length > 0) {
   }
 }
 
-// Convert heightmap stock to a THREE.js mesh for visualization
-// Assumes THREE is available in the environment
-function heightmap_to_mesh(stock) {
-  const THREE = require('three'); // Assumes three is installed as a dependency
-  const nx = Math.ceil(stock.width / stock.grid_size);
-  const ny = Math.ceil(stock.height / stock.grid_size);
-  const geometry = new THREE.BufferGeometry();
-  const positions = [];
-
-  // Build grid of vertices
-  for (let ix = 0; ix <= nx; ix++) {
-    for (let iy = 0; iy <= ny; iy++) {
-      const x = ix * stock.grid_size;
-      const y = iy * stock.grid_size;
-      const z = stock.get_height(x, y);
-      positions.push(x, y, z);
-    }
-  }
-
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  // Optionally, add faces (indices) for rendering as a surface
-
-  const material = new THREE.MeshPhongMaterial({ color: 0xcccccc, side: THREE.DoubleSide, wireframe: false });
-  return new THREE.Mesh(geometry, material);
-}
 
 // Extrude the heightmap down to min_z to create a solid mesh
 function heightmap_to_solid_mesh(stock, min_z) {
   const THREE = require('three');
-  const nx = Math.ceil(stock.width / stock.grid_size);
-  const ny = Math.ceil(stock.height / stock.grid_size);
+  const nx = Math.round(stock.width / stock.grid_size);
+  const ny = Math.round(stock.height / stock.grid_size);
   const positions = [];
   const indices = [];
 
-  // Top vertices
+  // Top vertices (world coordinates)
   for (let ix = 0; ix <= nx; ix++) {
     for (let iy = 0; iy <= ny; iy++) {
-      const x = ix * stock.grid_size;
-      const y = iy * stock.grid_size;
+      const x = stock.origin_x + ix * stock.grid_size;
+      const y = stock.origin_y + iy * stock.grid_size;
       const z = stock.get_height(x, y);
       positions.push(x, y, z);
     }
   }
-  // Bottom vertices
+  // Bottom vertices (world coordinates)
   for (let ix = 0; ix <= nx; ix++) {
     for (let iy = 0; iy <= ny; iy++) {
-      const x = ix * stock.grid_size;
-      const y = iy * stock.grid_size;
+      const x = stock.origin_x + ix * stock.grid_size;
+      const y = stock.origin_y + iy * stock.grid_size;
       positions.push(x, y, min_z);
     }
   }
@@ -180,6 +160,5 @@ function heightmap_to_solid_mesh(stock, min_z) {
 module.exports = {
   create_heightmap_stock,
   simulate_material_removal,
-  heightmap_to_mesh,
   heightmap_to_solid_mesh
 };

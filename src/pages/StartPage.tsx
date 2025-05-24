@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { heightmap_from_mesh } from '../utils/heightmap_from_mesh.js';
 import { generate_gcode } from '../utils/gcode_generator';
-import { create_heightmap_stock, simulate_material_removal, heightmap_to_mesh, heightmap_to_solid_mesh } from "../utils/stock_simulator.js";
+import { create_heightmap_stock, simulate_material_removal, heightmap_to_solid_mesh } from "../utils/stock_simulator.js";
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
@@ -127,47 +127,11 @@ const scene = scene_ref.current; // Use 'scene' instead of 'scene_ref.current' b
   }
 
   // Show solid box for stock
-if (show_stock && window.current_heightmap && box_bounds) {
-  const mesh = heightmap_to_mesh(window.current_heightmap);
-  mesh.userData.is_stock_heightmap = true;
-  mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
-
-  // Set material properties safely for both array and single material
-  if (Array.isArray(mesh.material)) {
-    mesh.material.forEach(m => {
-      const mat = m as THREE.MeshPhongMaterial;
-      mat.transparent = true;
-      mat.opacity = 0.8;
-      mat.color = new THREE.Color(0x00ff00);
-    });
-  } else {
-    const mat = mesh.material as THREE.MeshPhongMaterial;
-    mat.transparent = true;
-    mat.opacity = 0.8;
-    mat.color = new THREE.Color(0x00ff00);
-  }
-
-  scene.add(mesh);
-}
-
-  // Show heightmap mesh (top surface of remaining stock)
-  if (show_stock && window.current_heightmap && box_bounds) {
-    const mesh = heightmap_to_mesh(window.current_heightmap);
-    mesh.userData.is_stock_heightmap = true;
-    mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
-    const mat = mesh.material as THREE.MeshPhongMaterial;
-    mat.transparent = true;
-    mat.opacity = 0.8;
-    mat.color = new THREE.Color(0x00ff00); // green for cut surface
-    scene.add(mesh);
-  }
-
-  // Show solid box for stock
   if (show_stock && window.current_heightmap && box_bounds) {
     const min_z = box_bounds.min.z;
     const mesh = heightmap_to_solid_mesh(window.current_heightmap);
     mesh.userData.is_stock_heightmap = true;
-    mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
+    // mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
     scene.add(mesh);
   }
 
@@ -375,7 +339,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       set_box_size(size);
       set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
 
-      // Tool path parameters
+      // Tool path parameters (all in STL coordinates)
       const tool_diameter = 0.02; // meters
       const step_over = tool_diameter * 0.7; // 70% of tool diameter
 
@@ -384,7 +348,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       const min_y = box.min.y, max_y = box.max.y;
       const max_z = box.max.z + 0.010; // Start just above the stock
 
-      // Build the heightmap once
+      // Build the heightmap once, using STL coordinates
       const grid = {
         min_x: min_x,
         max_x: max_x,
@@ -395,15 +359,22 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       };
       const heightmap = heightmap_from_mesh(geometry, grid);
 
-      // 1. Create a stock object from the heightmap bounds
+      // 1. Create a stock object from the heightmap bounds (STL coordinates)
       const stock_width = max_x - min_x;
       const stock_height = max_y - min_y;
       const stock_grid_size = stock_width / grid.res_x;
       const stock_initial_height = box.max.z;
-      const stock = create_heightmap_stock(stock_width, stock_height, stock_grid_size, stock_initial_height);
-
-      // 2. Generate toolpath BEFORE simulating material removal
-      toolpath_points_ref.current = []; // Clear previous toolpath points
+      // Assumption: stock origin is at (min_x, min_y, min_z)
+      const stock = create_heightmap_stock(
+      stock_width,
+      stock_height,
+      stock_grid_size,
+      stock_initial_height,
+      min_x, // origin_x
+      min_y  // origin_y
+    );
+      // 2. Generate toolpath in STL coordinates
+      toolpath_points_ref.current = [];
       let reverse = false;
       const points_per_line = 100;
       for (
@@ -433,10 +404,10 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
         line_geometry.setPositions(positions);
         const line_material = new LineMaterial({
           color: 0x00ff00,
-          linewidth: linewidth, // in world units
-          alphaToCoverage: true // enables anti-aliasing if supported
+          linewidth: linewidth,
+          alphaToCoverage: true
         });
-        line_material.resolution.set(window.innerWidth, window.innerHeight); // required for LineMaterial
+        line_material.resolution.set(window.innerWidth, window.innerHeight);
         const line = new Line2(line_geometry, line_material);
         line.computeLineDistances();
         line.userData.is_tool_path = true;
@@ -467,7 +438,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
         console.log('Toolpath is empty after generation!');
       }
 
-      // 4. Simulate material removal after toolpath is generated
+      // 4. Simulate material removal after toolpath is generated (all in STL coordinates)
       simulate_material_removal(stock, tool, toolpath_points_ref.current);
 
       // 5. Assign to window.current_heightmap for visualization effect
