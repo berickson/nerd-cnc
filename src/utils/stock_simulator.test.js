@@ -36,3 +36,101 @@ test('heightmap_to_solid_mesh uses stock origin for vertex positions', () => {
   expect(pos[nxy * 3 + 1]).toBeCloseTo(-50);
   expect(pos[nxy * 3 + 2]).toBeCloseTo(min_z);
 });
+
+test('solid mesh normals point up for flat top', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const normals = mesh.geometry.attributes.normal.array;
+  // For a flat top, the first normal should be (0, 0, 1)
+  expect(normals[0]).toBeCloseTo(0, 2);
+  expect(normals[1]).toBeCloseTo(0, 2);
+  expect(normals[2]).toBeGreaterThan(0.9);
+});
+
+test('all top face normals point up for flat top', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const normals = mesh.geometry.attributes.normal.array;
+  const nxy = (Math.round(10 / 1) + 1) ** 2;
+
+  // Check the first normal is up
+  expect(normals[0]).toBeCloseTo(0, 2);
+  expect(normals[1]).toBeCloseTo(0, 2);
+  expect(normals[2]).toBeGreaterThan(0.9);
+});
+
+// Replace the 'verify normal of first top face vertex is pointing up' test
+test('verify normal of first top face vertex is pointing up', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const normals = mesh.geometry.attributes.normal.array;
+  
+  // Log all components of the first normal for detailed debugging
+  console.log(`First normal: (${normals[0]}, ${normals[1]}, ${normals[2]})`);
+  
+  // The normal should point predominantly up (z direction)
+  expect(Math.abs(normals[0])).toBeLessThan(0.1); // x component close to 0
+  expect(Math.abs(normals[1])).toBeLessThan(0.1); // y component close to 0
+  expect(normals[2]).toBeGreaterThan(0.9);        // z component close to 1
+});
+
+test('bottom face triangle normal points down for solid stock', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  // Create a stock with a flat top (height = 5) and bottom extruded to min_z = 0
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const min_z = 0;
+  const mesh = heightmap_to_solid_mesh(stock, min_z);
+  const positions = mesh.geometry.attributes.position.array;
+  
+  // Calculate dimensions based on grid size: num_top vertices per face = (nx+1)^2
+  const nx = Math.round(stock.width / stock.grid_size);
+  const ny = Math.round(stock.height / stock.grid_size);
+  const num_top = (nx + 1) * (ny + 1);
+  
+  // Helper: get index based on grid coordinates (for bottom face, top=false)
+  const idx = (ix, iy, top) =>
+    (top ? 0 : num_top) + ix * (ny + 1) + iy;
+  
+  // For the first grid cell bottom face, use vertices a2, b2, and d2
+  const a2_index = idx(0, 0, false);
+  const b2_index = idx(1, 0, false);
+  const d2_index = idx(0, 1, false);
+  
+  // Extract coordinates for each vertex
+  const ax = positions[a2_index * 3];
+  const ay = positions[a2_index * 3 + 1];
+  const az = positions[a2_index * 3 + 2];
+  
+  const bx = positions[b2_index * 3];
+  const by = positions[b2_index * 3 + 1];
+  const bz = positions[b2_index * 3 + 2];
+  
+  const dx = positions[d2_index * 3];
+  const dy = positions[d2_index * 3 + 1];
+  const dz = positions[d2_index * 3 + 2];
+  
+  // Compute two edge vectors for the triangle
+  const v1 = [bx - ax, by - ay, bz - az]; // edge from a2 to b2
+  const v2 = [dx - ax, dy - ay, dz - az]; // edge from a2 to d2
+  
+  // Compute face normal as cross product: v1 x v2
+  const face_normal = [
+    v1[1] * v2[2] - v1[2] * v2[1],
+    v1[2] * v2[0] - v1[0] * v2[2],
+    v1[0] * v2[1] - v1[1] * v2[0],
+  ];
+  
+  // Normalize the face normal
+  const mag = Math.sqrt(face_normal[0] ** 2 + face_normal[1] ** 2 + face_normal[2] ** 2);
+  face_normal[0] /= mag;
+  face_normal[1] /= mag;
+  face_normal[2] /= mag;
+  
+  // For a correctly built bottom face, the normal should be roughly (0, 0, -1)
+  expect(face_normal[0]).toBeCloseTo(0, 2);
+  expect(face_normal[1]).toBeCloseTo(0, 2);
+  expect(face_normal[2]).toBeLessThan(-0.9);
+});

@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { heightmap_from_mesh } from '../utils/heightmap_from_mesh.js';
-import { generate_gcode } from '../utils/gcode_generator';
+import { generate_gcode } from '../utils/gcode_generator.js';
 import { create_heightmap_stock, simulate_material_removal, heightmap_to_solid_mesh } from "../utils/stock_simulator.js";
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
@@ -59,10 +59,10 @@ const StartPage: React.FC = () => {
     scene.background = new THREE.Color(0x222222);
 
     // Add lights for MeshPhongMaterial
-    const ambient_light = new THREE.AmbientLight(0xffffff, 0.6);
+    const ambient_light = new THREE.AmbientLight(0xffffff, 0.1);
     scene.add(ambient_light);
-    const directional_light = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional_light.position.set(1, 2, 3);
+    const directional_light = new THREE.DirectionalLight(0xffffff, 1.0);
+    directional_light.position.set(100, 100, 100);
     scene.add(directional_light);
 
     // Set up camera
@@ -642,4 +642,4 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
 
 };
 
-export default StartPage;
+export default StartPage;;
