@@ -9,9 +9,17 @@
     - [ ] Pass tool definition to toolpath and simulation logic
 
 - [ ] Stock simulation (material removal)
-    - [ ] Use tool definition for material removal (simulate flat endmill)
+    - [x] Decide on initial heightmap-based simulation for 2.5D
+    - [x] Implement stock_heightmap data structure and update logic
+    - [x] Simulate material removal for flat endmill using heightmap
+    - [x] Adopt STL (natural) coordinates for all simulation and toolpath operations.
+    - [x] Remove any translation of toolpath or stock to (0,0,0).
+    - [ ] Allow user to specify stock offset/extra material in STL coordinates.
     - [ ] Visualize updated stock after each toolpath segment
-    - [ ] Add unit tests for stock update logic (given tool, path, and initial stock, check result)
+    - [ ] Add unit tests for stock update logic
+    - [ ] Design abstraction layer for stock representation (heightmap or mesh)
+    - [ ] Plan and prototype mesh-based stock simulation for full 3D/4th axis
+    - [ ] Allow switching between heightmap and mesh simulation modes
 
 - [ ] Extend tool definition for more shapes (ball, V-bit, etc.) after flat tool works
 
@@ -37,6 +45,8 @@
 - [ ] UI: axis/grid helpers
 - [ ] UI: loading/progress for large files
 - [ ] UI: highlight toolpath vs mesh
+- [ ] 3d: Passes at different manual orientations
+- [ ] 3d: Fourth axis support
 
 ## UX / UI
 - [ ] Group controls (file input, export, settings) in a unified panel or toolbar
