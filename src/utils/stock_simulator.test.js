@@ -79,42 +79,43 @@ test('verify normal of first top face vertex is pointing up', () => {
 
 test('bottom face triangle normal points down for solid stock', () => {
   const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
-  // Create a stock with a flat top (height = 5) and bottom extruded to min_z = 0
+  // create a stock with a flat top (height = 5) and bottom extruded to min_z = 0
   const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
   const min_z = 0;
   const mesh = heightmap_to_solid_mesh(stock, min_z);
   const positions = mesh.geometry.attributes.position.array;
   
-  // Calculate dimensions based on grid size: num_top vertices per face = (nx+1)^2
+  // calculate grid dimensions; bottom vertices start at index = num_top
   const nx = Math.round(stock.width / stock.grid_size);
   const ny = Math.round(stock.height / stock.grid_size);
   const num_top = (nx + 1) * (ny + 1);
   
-  // Helper: get index based on grid coordinates (for bottom face, top=false)
+  // helper function: returns the index for a vertex in the given grid; 
+  // for bottom face (top=false) vertices start at num_top
   const idx = (ix, iy, top) =>
     (top ? 0 : num_top) + ix * (ny + 1) + iy;
   
-  // For the first grid cell bottom face, use vertices a2, b2, and d2
+  // For the first grid cell bottom face, select vertices in the order (a2, d2, b2)
   const a2_index = idx(0, 0, false);
-  const b2_index = idx(1, 0, false);
   const d2_index = idx(0, 1, false);
+  const b2_index = idx(1, 0, false);
   
-  // Extract coordinates for each vertex
+  // Extract coordinates for vertices a2, d2 and b2
   const ax = positions[a2_index * 3];
   const ay = positions[a2_index * 3 + 1];
   const az = positions[a2_index * 3 + 2];
-  
-  const bx = positions[b2_index * 3];
-  const by = positions[b2_index * 3 + 1];
-  const bz = positions[b2_index * 3 + 2];
   
   const dx = positions[d2_index * 3];
   const dy = positions[d2_index * 3 + 1];
   const dz = positions[d2_index * 3 + 2];
   
-  // Compute two edge vectors for the triangle
-  const v1 = [bx - ax, by - ay, bz - az]; // edge from a2 to b2
-  const v2 = [dx - ax, dy - ay, dz - az]; // edge from a2 to d2
+  const bx = positions[b2_index * 3];
+  const by = positions[b2_index * 3 + 1];
+  const bz = positions[b2_index * 3 + 2];
+  
+  // Compute two edge vectors for the triangle using order (a2, d2, b2)
+  const v1 = [dx - ax, dy - ay, dz - az]; // edge from a2 to d2
+  const v2 = [bx - ax, by - ay, bz - az]; // edge from a2 to b2
   
   // Compute face normal as cross product: v1 x v2
   const face_normal = [
@@ -133,4 +134,78 @@ test('bottom face triangle normal points down for solid stock', () => {
   expect(face_normal[0]).toBeCloseTo(0, 2);
   expect(face_normal[1]).toBeCloseTo(0, 2);
   expect(face_normal[2]).toBeLessThan(-0.9);
+});
+
+test('top and bottom do not coincide after milling', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const positions = mesh.geometry.attributes.position.array;
+
+  // every bottom vertex z should be strictly less than any top z
+  // (assuming the buffer is used)
+  let min_top_z = Infinity;
+  let max_bottom_z = -Infinity;
+
+  // first half are top vertices, second half are bottom
+  const nx = Math.round(stock.width / stock.grid_size);
+  const ny = Math.round(stock.height / stock.grid_size);
+  const num_top = (nx + 1) * (ny + 1);
+
+  for (let i = 0; i < num_top; i++) {
+    min_top_z = Math.min(min_top_z, positions[i * 3 + 2]);
+  }
+  for (let i = num_top; i < num_top * 2; i++) {
+    max_bottom_z = Math.max(max_bottom_z, positions[i * 3 + 2]);
+  }
+  expect(min_top_z).toBeGreaterThan(max_bottom_z);
+});
+
+test('heightmap_to_solid_mesh returns a closed manifold', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  const stock = create_heightmap_stock(10, 10, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const geometry = mesh.geometry;
+  expect(() => verify_mesh_is_closed_manifold(geometry)).not.toThrow();
+});
+
+// Helper: checks that every edge is shared by exactly two faces
+function verify_mesh_is_closed_manifold(geometry) {
+  // Assumes geometry.index exists and is a THREE.BufferAttribute or TypedArray
+  const index = geometry.index.array;
+  const edge_map = new Map();
+
+  // Store each edge as a sorted string "min,max"
+  function add_edge(a, b) {
+    const key = a < b ? `${a},${b}` : `${b},${a}`;
+    edge_map.set(key, (edge_map.get(key) || 0) + 1);
+  }
+
+  for (let i = 0; i < index.length; i += 3) {
+    const a = index[i];
+    const b = index[i + 1];
+    const c = index[i + 2];
+    add_edge(a, b);
+    add_edge(b, c);
+    add_edge(c, a);
+  }
+
+  // Every edge must be shared by exactly 2 triangles
+  for (const [key, count] of edge_map.entries()) {
+    if (count !== 2) {
+      throw new Error(`Edge ${key} is shared by ${count} faces (should be 2)`);
+    }
+  }
+}
+
+test('log mesh for 1x1 heightmap', () => {
+  const { create_heightmap_stock, heightmap_to_solid_mesh } = require('./stock_simulator');
+  // 1x1 grid: two points in each direction, so 2x2 grid of vertices
+  const stock = create_heightmap_stock(1, 1, 1, 5, 0, 0);
+  const mesh = heightmap_to_solid_mesh(stock, 0);
+  const positions = mesh.geometry.attributes.position.array;
+  const indices = mesh.geometry.index.array;
+
+  console.log('positions:', Array.from(positions));
+  console.log('indices:', Array.from(indices));
 });

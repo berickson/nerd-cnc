@@ -89,15 +89,17 @@ function simulate_material_removal(stock, tool, toolpath) {
 }
 
 
-// Extrude the heightmap down to min_z to create a solid mesh
+// Extrude the heightmap down to min_z to create a closed solid mesh.
+// Assumes stock is a heightmap object as created by create_heightmap_stock.
+// min_z: number, the z value for the bottom of the solid.
 function heightmap_to_solid_mesh(stock, min_z) {
   const THREE = require('three');
-  const nx = Math.round(stock.width / stock.grid_size);
-  const ny = Math.round(stock.height / stock.grid_size);
+  const nx = Math.round(stock.width / stock.grid_size); // number of cells in x
+  const ny = Math.round(stock.height / stock.grid_size); // number of cells in y
   const positions = [];
   const indices = [];
 
-  // Generate top vertices (world coordinates)
+  // Generate top vertices (z from heightmap)
   for (let ix = 0; ix <= nx; ix++) {
     for (let iy = 0; iy <= ny; iy++) {
       const x = stock.origin_x + ix * stock.grid_size;
@@ -106,7 +108,10 @@ function heightmap_to_solid_mesh(stock, min_z) {
       positions.push(x, y, z);
     }
   }
-  // Generate bottom vertices (world coordinates)
+
+  // Generate bottom vertices (z = min_z)
+  // num_top_vertices is the count of vertices in the top plane
+  const num_top_vertices = (nx + 1) * (ny + 1);
   for (let ix = 0; ix <= nx; ix++) {
     for (let iy = 0; iy <= ny; iy++) {
       const x = stock.origin_x + ix * stock.grid_size;
@@ -115,94 +120,115 @@ function heightmap_to_solid_mesh(stock, min_z) {
     }
   }
 
-  // Helper: get vertex index; top vertices start at 0; bottom follow immediately
-  const idx = (ix, iy, top) =>
-    (top ? 0 : (nx + 1) * (ny + 1)) + ix * (ny + 1) + iy;
+  // Helper: get vertex index
+  // top: true for top plane, false for bottom plane
+  // Vertex indexing: top plane vertices come first, then bottom plane vertices.
+  function idx(ix, iy, top) {
+    // (ny + 1) is the number of vertices along the y-axis for a given ix
+    return (top ? 0 : num_top_vertices) + ix * (ny + 1) + iy;
+  }
 
   // Top and bottom faces
   for (let ix = 0; ix < nx; ix++) {
     for (let iy = 0; iy < ny; iy++) {
-      // Top face - use order (a, b, d) and (b, c, d) for upward normals
+      // Top face (upward normals)
       const a = idx(ix, iy, true);
       const b = idx(ix + 1, iy, true);
       const c = idx(ix + 1, iy + 1, true);
       const d = idx(ix, iy + 1, true);
       indices.push(a, b, d, b, c, d);
 
-      // Bottom face - keep current winding (downward normals)
+      // Bottom face (downward normals, reverse winding)
       const a2 = idx(ix, iy, false);
       const b2 = idx(ix + 1, iy, false);
       const c2 = idx(ix + 1, iy + 1, false);
       const d2 = idx(ix, iy + 1, false);
-      indices.push(a2, b2, d2, b2, c2, d2);
+      indices.push(a2, d2, b2, b2, d2, c2);
     }
   }
 
-  // Duplicate top vertices for use in sides to prevent normal averaging
-  const num_top = (nx + 1) * (ny + 1);
-  // positions currently has 2*num_top vertices (top and bottom)
-  const side_top_offset = positions.length / 3; // new offset for duplicate top vertices
-  for (let i = 0; i < num_top; i++) {
-    const x = positions[i * 3];
-    const y = positions[i * 3 + 1];
-    const z = positions[i * 3 + 2];
-    positions.push(x, y, z);
+  // Duplicate top vertices for use in side faces to get sharp normals
+  // num_top_vertices is already (nx + 1) * (ny + 1)
+  const side_top_offset = positions.length / 3; // Marks the start of duplicated top vertices
+                                              // positions array currently holds original top + original bottom vertices
+
+  for (let i = 0; i < num_top_vertices; i++) {
+    // Original top vertices are at indices 0 to num_top_vertices - 1
+    // Push a copy of each original top vertex
+    positions.push(
+      positions[i * 3 + 0], // x
+      positions[i * 3 + 1], // y
+      positions[i * 3 + 2]  // z
+    );
   }
 
-  // Sides - use duplicated top vertices for the top edge of sides
+  // Side faces:
+  // Use duplicated top vertices (offset by side_top_offset) and original bottom vertices.
+
+  // Left edge (face at ix = 0, normal should be -X)
+  // Strip runs along Y: top_a is (0, iy), top_b is (0, iy+1)
+  for (let iy = 0; iy < ny; iy++) {
+    const top_a = side_top_offset + idx(0, iy, true); // Duplicated top vertex
+    const top_b = side_top_offset + idx(0, iy + 1, true); // Duplicated top vertex
+    const bot_a = idx(0, iy, false); // Bottom vertex
+    const bot_b = idx(0, iy + 1, false); // Bottom vertex
+    // Winding for -X normal: (top_a, top_b, bot_a), (bot_a, top_b, bot_b)
+    indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
+  }
+
+  // Right edge (face at ix = nx, normal should be +X)
+  // Strip runs along Y: top_a is (nx, iy), top_b is (nx, iy+1)
+  for (let iy = 0; iy < ny; iy++) {
+    const top_a = side_top_offset + idx(nx, iy, true);
+    const top_b = side_top_offset + idx(nx, iy + 1, true);
+    const bot_a = idx(nx, iy, false);
+    const bot_b = idx(nx, iy + 1, false);
+    // Winding for +X normal: (top_a, bot_a, top_b), (top_b, bot_a, bot_b)
+    indices.push(top_a, bot_a, top_b, top_b, bot_a, bot_b);
+  }
+
+  // Front edge (face at iy = 0, normal should be -Y)
+  // Strip runs along X: top_a is (ix, 0), top_b is (ix+1, 0)
   for (let ix = 0; ix < nx; ix++) {
-    for (let iy = 0; iy < ny; iy++) {
-      // Original top indices (from top face)
-      const a = idx(ix, iy, true);
-      const b = idx(ix + 1, iy, true);
-      const c = idx(ix + 1, iy + 1, true);
-      const d = idx(ix, iy + 1, true);
-      // Duplicated top vertex indices for sides
-      const a_dup = a + side_top_offset;
-      const b_dup = b + side_top_offset;
-      const c_dup = c + side_top_offset;
-      const d_dup = d + side_top_offset;
-      // Bottom face indices remain unchanged
-      const a2 = idx(ix, iy, false);
-      const b2 = idx(ix + 1, iy, false);
-      const c2 = idx(ix + 1, iy + 1, false);
-      const d2 = idx(ix, iy + 1, false);
-
-      // Side 1
-      indices.push(a_dup, b_dup, a2, b_dup, b2, a2);
-      // Side 2
-      indices.push(b_dup, c_dup, b2, c_dup, c2, b2);
-      // Side 3
-      indices.push(c_dup, d_dup, c2, d_dup, d2, c2);
-      // Side 4
-      indices.push(d_dup, a_dup, d2, a_dup, a2, d2);
-    }
+    const top_a = side_top_offset + idx(ix, 0, true);
+    const top_b = side_top_offset + idx(ix + 1, 0, true);
+    const bot_a = idx(ix, 0, false);
+    const bot_b = idx(ix + 1, 0, false);
+    // Winding for -Y normal: (top_a, bot_a, top_b), (top_b, bot_a, bot_b)
+    // Note: This is the same pattern as Right face, but orientation of strip is different.
+    indices.push(top_a, bot_a, top_b, top_b, bot_a, bot_b);
   }
 
-  // Create buffer geometry and set position attribute
+  // Back edge (face at iy = ny, normal should be +Y)
+  // Strip runs along X: top_a is (ix, ny), top_b is (ix+1, ny)
+  for (let ix = 0; ix < nx; ix++) {
+    const top_a = side_top_offset + idx(ix, ny, true);
+    const top_b = side_top_offset + idx(ix + 1, ny, true);
+    const bot_a = idx(ix, ny, false);
+    const bot_b = idx(ix + 1, ny, false);
+    // Winding for +Y normal: (top_a, top_b, bot_a), (bot_a, top_b, bot_b)
+    // Note: This is the same pattern as Left face, but orientation of strip is different.
+    indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
+  }
+
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     'position',
     new THREE.Float32BufferAttribute(positions, 3)
   );
-
-  // Set indices and compute vertex normals
   geometry.setIndex(indices);
-  geometry.computeVertexNormals();
+  geometry.computeVertexNormals(); // Normals will now be averaged at shared edges
 
-  // Create material (remove unsupported flat_shading property)
   const material = new THREE.MeshPhongMaterial({
-    color: 0x229922, // rich green for contrast
-    shininess: 80,   // strong specular highlights
+    color: 0x229922,
+    shininess: 80,
     specular: 0xdddddd,
-    side: THREE.DoubleSide,
+    side: THREE.DoubleSide, // Still useful if any winding is accidentally wrong
     transparent: false
   });
 
   return new THREE.Mesh(geometry, material);
 }
-
-
 module.exports = {
   create_heightmap_stock,
   simulate_material_removal,
