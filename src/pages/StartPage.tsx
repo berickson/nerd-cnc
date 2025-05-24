@@ -24,36 +24,24 @@ const StartPage: React.FC = () => {
   const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
   const camera_ref = useRef<THREE.OrthographicCamera | null>(null);
   const controls_ref = useRef<OrbitControls | null>(null);
+  const tool_mesh_ref = useRef<THREE.Group | null>(null);
 
   const [boxSize, set_box_size] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
-  const [show_mesh, set_show_mesh] = React.useState(true);
+  const [box_bounds, set_box_bounds] = React.useState<{ min: THREE.Vector3, max: THREE.Vector3 } | null>(null); const [show_mesh, set_show_mesh] = React.useState(true);
   const [show_toolpath, set_show_toolpath] = React.useState(true);
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
   const [show_wireframe, set_show_wireframe] = React.useState(false);
 
-  useEffect(() => {
-    if (!scene_ref.current) return;
-    scene_ref.current.children.forEach(obj => {
-      if (obj.userData.is_stl && obj instanceof THREE.Mesh) {
-        if (show_wireframe) {
-          obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
-        } else {
-          obj.material = new THREE.MeshNormalMaterial();
-        }
-      }
-    });
-  }, [show_wireframe, show_mesh]);
+  const [tool, set_tool] = React.useState({
+    cutter_diameter: 3.175,    // all dimensions are mm
+    shank_diameter: 3.175,
+    overall_length: 38.0,
+    length_of_cut: 17.0,
+    type: 'flat'
+  });
+  const [tool_error, set_tool_error] = React.useState<string | null>(null);
 
-  useEffect(() => {
-    // Update visibility of mesh, toolpath, and bounding box based on UI toggles
-    if (!scene_ref.current) return;
-    scene_ref.current.children.forEach(obj => {
-      if (obj.userData.is_stl) obj.visible = show_mesh;
-      if (obj.userData.is_tool_path) obj.visible = show_toolpath;
-      if (obj.userData.is_bounding_box) obj.visible = show_bounding_box;
-    });
-  }, [show_mesh, show_toolpath, show_bounding_box]);
-
+  // initialize three.js scene, camera, renderer, and controls on mount
   useEffect(() => {
     if (!mount_ref.current) return; // Add this guard
     // Set up scene
@@ -62,11 +50,18 @@ const StartPage: React.FC = () => {
 
     scene.background = new THREE.Color(0x222222);
 
+    // Add lights for MeshPhongMaterial
+    const ambient_light = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient_light);
+    const directional_light = new THREE.DirectionalLight(0xffffff, 0.8);
+    directional_light.position.set(1, 2, 3);
+    scene.add(directional_light);
+
     // Set up camera
     const width = mount_ref.current.clientWidth;
     const height = mount_ref.current.clientHeight;
     const aspect = width / height;
-    const frustumSize = 2; // Adjust for your scene scale
+    const frustumSize = 100; // Adjust for your scene scale
     const camera = new THREE.OrthographicCamera(
       -frustumSize * aspect / 2,
       frustumSize * aspect / 2,
@@ -75,7 +70,7 @@ const StartPage: React.FC = () => {
       -1000,
       1000
     );
-    camera.position.set(2, 2, 2);
+    camera.position.set(100, 100, 100); // mm scale
     camera.lookAt(0, 0, 0);
     camera_ref.current = camera;
 
@@ -104,6 +99,104 @@ const StartPage: React.FC = () => {
       }
     };
   }, []);
+
+// Section: tool effect: show the tool in the 3D scene whenever tool parameters or bounding box change
+
+useEffect(() => {
+  if (!scene_ref.current) {
+    console.log('Tool effect: scene_ref.current is not set');
+    return;
+  }
+
+  // Remove previous tool mesh if present
+  if (tool_mesh_ref.current) {
+    scene_ref.current.remove(tool_mesh_ref.current);
+    tool_mesh_ref.current = null;
+    console.log('Removed previous tool mesh');
+  }
+
+  // Default tool position and orientation
+  let tool_position = new THREE.Vector3(0, 0, 0);
+  let tool_rotation = new THREE.Euler(Math.PI / 2, 0, 0);
+
+  if (box_bounds) {
+    // Place the cutter tip just outside the top-front-left edge (min.x, max.y, max.z) of the bounding box
+    // Offset by half the cutter diameter in -X so the tool is "outside" and ready to cut in
+    const left_x = box_bounds.min.x;
+    const front_y = box_bounds.max.y;
+    const top_z = box_bounds.max.z;
+    tool_position = new THREE.Vector3(
+      left_x,
+      front_y,
+      top_z
+    );
+    console.log('Tool effect: tool_position (outside top-front-left)', tool_position);
+  } else {
+    console.log('Tool effect: using default tool position', tool_position);
+  }
+
+  // Create a group for the tool
+  const tool_group = new THREE.Group();
+
+  // Cutter (lower part) - light gray
+  const cutter_geometry = new THREE.CylinderGeometry(
+    tool.cutter_diameter / 2,
+    tool.cutter_diameter / 2,
+    tool.length_of_cut,
+    32
+  );
+  const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0 });
+  const cutter_mesh = new THREE.Mesh(cutter_geometry, cutter_material);
+  cutter_mesh.position.y = tool.length_of_cut / 2; // build up from origin
+  tool_group.add(cutter_mesh);
+
+  // Shank (upper part) - blue
+  const shank_length = Math.max(tool.overall_length - tool.length_of_cut, 0.0001);
+  const shank_geometry = new THREE.CylinderGeometry(
+    tool.shank_diameter / 2,
+    tool.shank_diameter / 2,
+    shank_length,
+    32
+  );
+  const shank_material = new THREE.MeshPhongMaterial({ color: 0x2196f3 });
+  const shank_mesh = new THREE.Mesh(shank_geometry, shank_material);
+  shank_mesh.position.y = tool.length_of_cut + shank_length / 2;
+  tool_group.add(shank_mesh);
+
+  tool_group.position.copy(tool_position);
+  tool_group.rotation.copy(tool_rotation);
+
+  tool_group.userData.is_tool_visual = true;
+  scene_ref.current.add(tool_group);
+  tool_mesh_ref.current = tool_group;
+  console.log('Tool effect: tool mesh added at', tool_position, 'rotation', tool_rotation);
+}, [tool, box_bounds, scene_ref.current]);
+
+
+  // update mesh material to wireframe or normal based on show_wireframe toggle
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    scene_ref.current.children.forEach(obj => {
+      if (obj.userData.is_stl && obj instanceof THREE.Mesh) {
+        if (show_wireframe) {
+          obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
+        } else {
+          obj.material = new THREE.MeshNormalMaterial();
+        }
+      }
+    });
+  }, [show_wireframe, show_mesh]);
+
+  // update visibility of mesh, toolpath, and bounding box based on UI toggles
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    scene_ref.current.children.forEach(obj => {
+      if (obj.userData.is_stl) obj.visible = show_mesh;
+      if (obj.userData.is_tool_path) obj.visible = show_toolpath;
+      if (obj.userData.is_bounding_box) obj.visible = show_bounding_box;
+    });
+  }, [show_mesh, show_toolpath, show_bounding_box]);
+
 
 
   function handle_export_gcode() {
@@ -193,6 +286,8 @@ const StartPage: React.FC = () => {
       geometry.computeBoundingBox();
       if (geometry.boundingBox) {
         const box = new THREE.Box3().setFromObject(mesh);
+        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+        console.log('handle_file_change: set_box_bounds', box.min, box.max);
         const linewidth = compute_linewidth(box);
         const boxHelper = new THREE.Box3Helper(box, 0xff0000);
         boxHelper.userData.is_bounding_box = true;
@@ -205,6 +300,8 @@ const StartPage: React.FC = () => {
         const size = new THREE.Vector3();
         box.getSize(size);
         set_box_size(size);
+        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+
         // Tool path parameters
         const toolDiameter = 0.02; // meters
         const stepOver = toolDiameter * 0.7; // 70% of tool diameter
@@ -304,12 +401,80 @@ const StartPage: React.FC = () => {
             Export G-code
           </button>
         </div>
-        {/* Settings Section */}
+
+        {/* Tool Section */}
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Settings</div>
-          {/* Placeholder for future settings (feedrate, safe Z, units, etc.) */}
-          <span style={{ color: '#aaa', fontSize: '0.9em' }}>Coming soon</span>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Tool</div>
+          <form
+            onSubmit={e => e.preventDefault()}
+            style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+          >
+            <label>
+              Cutter Diameter (m)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={tool.cutter_diameter}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  set_tool(t => ({ ...t, cutter_diameter: v }));
+                }}
+              />
+            </label>
+            <label>
+              Shank Diameter (m)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={tool.shank_diameter}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  set_tool(t => ({ ...t, shank_diameter: v }));
+                }}
+              />
+            </label>
+            <label>
+              Overall Length (m)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={tool.overall_length}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  set_tool(t => ({ ...t, overall_length: v }));
+                }}
+              />
+            </label>
+            <label>
+              Length of Cut (m)
+              <input
+                type="number"
+                min="0.1"
+                step="0.1"
+                value={tool.length_of_cut}
+                onChange={e => {
+                  const v = parseFloat(e.target.value);
+                  set_tool(t => ({ ...t, length_of_cut: v }));
+                }}
+              />
+            </label>
+            <label>
+              Type
+              <select
+                value={tool.type}
+                onChange={e => set_tool(t => ({ ...t, type: e.target.value }))}
+              >
+                <option value="flat">Flat</option>
+                {/* Future: <option value="ball">Ball</option> etc. */}
+              </select>
+            </label>
+            {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
+          </form>
         </div>
+
         {/* Visibility Section */}
         <div>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>

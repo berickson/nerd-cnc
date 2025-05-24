@@ -3,8 +3,9 @@
 ## Next Steps: Tool Definition and Stock Simulation
 
 - [ ] Minimal tool definition (object with diameter and type, e.g. flat)
-    - [ ] Add tool data structure (e.g. { diameter: number, type: 'flat' })
-    - [ ] UI for selecting tool diameter and type (flat only at first)
+    - [x] Add tool data structure (e.g. { diameter: number, type: 'flat' })
+    - [x] UI for selecting tool diameter and type (flat only at first)
+    - [x] Visualize the tool live
     - [ ] Pass tool definition to toolpath and simulation logic
 
 - [ ] Stock simulation (material removal)
