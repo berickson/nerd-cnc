@@ -18,6 +18,7 @@
     - [ ] Visualize updated stock after each toolpath segment
     - [ ] Add unit tests for stock update logic
     - [ ] Design abstraction layer for stock representation (heightmap or mesh)
+        - [ ] Investigate librarares (three-csgmesh, three-bvh-csg) for mesh stock operations (intersect/subtract)
     - [ ] Plan and prototype mesh-based stock simulation for full 3D/4th axis
     - [ ] Allow switching between heightmap and mesh simulation modes
 
