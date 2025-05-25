@@ -2,7 +2,7 @@
 
 ## Next Steps: Tool Definition and Stock Simulation
 
-- [ ] Minimal tool definition (object with diameter and type, e.g. flat)
+- [x] Minimal tool definition (object with diameter and type, e.g. flat)
   - [x] Add tool data structure (e.g. { diameter: number, type: 'flat' })
   - [x] UI for selecting tool diameter and type (flat only at first)
   - [x] Visualize the tool live
@@ -24,6 +24,8 @@
   - [ ] Allow switching between heightmap and mesh simulation modes
 
 - [ ] Extend tool definition for more shapes (ball, V-bit, etc.) after flat tool works
+  - [ ] support ball-nose
+  - [ ] support V-bit
 
 ## Features
 - [ ] G-code export for toolpaths
