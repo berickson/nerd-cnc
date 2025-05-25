@@ -24,7 +24,7 @@
   - [ ] Allow switching between heightmap and mesh simulation modes
 
 - [ ] Extend tool definition for more shapes (ball, V-bit, etc.) after flat tool works
-  - [ ] support ball-nose
+  - [x] support ball-nose
   - [ ] support V-bit
 
 ## Features

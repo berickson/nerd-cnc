@@ -52,12 +52,14 @@ const StartPage: React.FC = () => {
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
   const [simulation_dirty, set_simulation_dirty] = React.useState(false);
 
+  // Add v_angle to tool state for vbit support
   const [tool, set_tool] = React.useState({
     cutter_diameter: 3.175,    // all dimensions are mm
     shank_diameter: 3.175,
     overall_length: 38.0,
     length_of_cut: 17.0,
-    type: 'flat'
+    type: 'flat',
+    v_angle: 60 // default, only used for vbit
   });
   const [tool_error, set_tool_error] = React.useState<string | null>(null);
   const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
@@ -256,6 +258,39 @@ const StartPage: React.FC = () => {
       ]);
       // Recompute normals so the ball is visible from all sides
       cutter_geometry.computeVertexNormals();
+    } else if (tool.type === 'vbit') {
+      // V-bit: visualize as a cone with correct V angle
+      // v_angle is the included angle at the tip (degrees)
+      const radius = tool.cutter_diameter / 2;
+      const v_angle_rad = tool.v_angle * Math.PI / 180;
+      // height from tip to base for this angle
+      const height = radius / Math.tan(v_angle_rad / 2);
+      const cone_geom = new THREE.ConeGeometry(
+        radius,
+        height,
+        64 // segments for smoothness
+      );
+      // rotate 180 degrees around X to make the tip point down
+      cone_geom.rotateX(Math.PI);
+      // Move cone so tip is at y=0 (default is base at y=0)
+      cone_geom.translate(0, -(tool.length_of_cut/2 - height/2), 0);
+      cutter_geometry = cone_geom;
+
+      // the cones still should have a cutting edge, so we need to add a cylinder at the base
+      const base_cylinder_geom = new THREE.CylinderGeometry(
+        tool.cutter_diameter / 2,
+        tool.cutter_diameter / 2,
+        tool.length_of_cut - height, // length of cut minus the cone height
+        32
+      );
+      base_cylinder_geom.translate(0, height / 2, 0); // move cylinder so its base is at y=0
+      // Merge the cone and cylinder geometries
+      cutter_geometry = BufferGeometryUtils.mergeGeometries([
+        cutter_geometry,
+        base_cylinder_geom
+      ]);
+
+
     } else {
       // Flat endmill: just a cylinder
       cutter_geometry = new THREE.CylinderGeometry(
@@ -713,14 +748,39 @@ const StartPage: React.FC = () => {
               <select
                 value={tool.type}
                 onChange={e => {
-                  set_tool(t => ({ ...t, type: e.target.value }));
+                  const new_type = e.target.value;
+                  if (new_type === 'vbit') {
+                    set_tool(t => ({ ...t, type: new_type, v_angle: t.v_angle || 60 }));
+                  } else {
+                    set_tool(t => ({ ...t, type: new_type, v_angle: 60 })); // always keep v_angle present for type safety
+                  }
                   set_simulation_dirty(true);
                 }}
               >
                 <option value="flat">Flat</option>
                 <option value="ball">Ball</option>
+                <option value="vbit">V-bit</option>
               </select>
             </label>
+            {/* Show v_angle input only for vbit */}
+            {tool.type === 'vbit' && (
+              <label>
+                V Angle
+                <input
+                  type="number"
+                  min="10"
+                  max="170"
+                  step="1"
+                  value={tool.v_angle}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value);
+                    set_tool(t => ({ ...t, v_angle: v }));
+                    set_simulation_dirty(true);
+                  }}
+                />
+                °
+              </label>
+            )}
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
           <button

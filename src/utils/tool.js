@@ -20,7 +20,8 @@ function create_tool(params) {
     shank_diameter,
     overall_length,
     length_of_cut,
-    type
+    type,
+    v_angle
   } = params;
 
   if (typeof cutter_diameter !== 'number' || cutter_diameter <= 0) {
@@ -38,17 +39,25 @@ function create_tool(params) {
   if (!type || typeof type !== 'string') {
     throw new Error('type must be a string');
   }
-  if (!['flat', 'ball'].includes(type)) {
+  if (!['flat', 'ball', 'vbit'].includes(type)) {
     throw new Error(`Unsupported tool type: ${type}`);
   }
+  if (type === 'vbit') {
+    // v_angle: included angle in degrees, must be >0 and <180
+    if (typeof v_angle !== 'number' || v_angle <= 0 || v_angle >= 180) {
+      throw new Error('v_angle must be a number in (0, 180) for vbit');
+    }
+  }
 
-  return {
+  const tool = {
     cutter_diameter,
     shank_diameter,
     overall_length,
     length_of_cut,
     type
   };
+  if (type === 'vbit') tool.v_angle = v_angle;
+  return tool;
 }
 
 module.exports = { create_tool };

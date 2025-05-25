@@ -31,6 +31,23 @@ describe('create_tool', () => {
     expect(tool.type).toBe('ball');
   });
 
+  it('creates a vbit tool with all required properties', () => {
+    const tool = create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'vbit',
+      v_angle: 60
+    });
+    expect(tool.cutter_diameter).toBe(0.01);
+    expect(tool.shank_diameter).toBe(0.008);
+    expect(tool.overall_length).toBe(0.05);
+    expect(tool.length_of_cut).toBe(0.02);
+    expect(tool.type).toBe('vbit');
+    expect(tool.v_angle).toBe(60);
+  });
+
   it('throws if cutter_diameter is zero or negative', () => {
     expect(() => create_tool({
       cutter_diameter: 0,
@@ -129,5 +146,39 @@ describe('create_tool', () => {
       length_of_cut: 0.02,
       type: 'unsupported'
     })).toThrow('Unsupported tool type: unsupported');
+  });
+
+  it('throws if vbit is missing v_angle or v_angle is invalid', () => {
+    expect(() => create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'vbit'
+    })).toThrow();
+    expect(() => create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'vbit',
+      v_angle: 0
+    })).toThrow();
+    expect(() => create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'vbit',
+      v_angle: -30
+    })).toThrow();
+    expect(() => create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'vbit',
+      v_angle: 200
+    })).toThrow();
   });
 });
