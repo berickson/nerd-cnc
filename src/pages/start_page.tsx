@@ -480,6 +480,25 @@ const StartPage: React.FC = () => {
   function handle_generate() {
     if (!stl_geometry || !box_bounds) return;
     set_last_tool(tool);
+
+    // Calculate grid cell size considering both X and Y dimensions
+    const grid_cell_size_x = (box_bounds.max.x - box_bounds.min.x) / toolpath_grid_resolution;
+    const grid_cell_size_y = (box_bounds.max.y - box_bounds.min.y) / toolpath_grid_resolution;
+    const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2; // Add 20% margin to ensure coverage
+
+    // Debugging log for grid cell size and tool diameter
+    console.log('Grid cell size (X):', grid_cell_size_x, 'Grid cell size (Y):', grid_cell_size_y, 'Effective grid cell size with margin:', required_tool_size, 'Tool cutter diameter:', tool.cutter_diameter);
+
+    // Add a warning if the tool size is too small compared to the grid size
+    if (tool.cutter_diameter <= required_tool_size) {
+      set_tool_error(
+        `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
+      );
+      return;
+    } else {
+      set_tool_error(null);
+    }
+
     run_simulation(stl_geometry, tool, box_bounds);
     set_simulation_dirty(false);
   }
