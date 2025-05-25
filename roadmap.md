@@ -6,7 +6,6 @@
     - [x] Add tool data structure (e.g. { diameter: number, type: 'flat' })
     - [x] UI for selecting tool diameter and type (flat only at first)
     - [x] Visualize the tool live
-    - [ ] Pass tool definition to toolpath and simulation logic
 
 - [ ] Stock simulation (material removal)
     - [x] Decide on initial heightmap-based simulation for 2.5D
@@ -17,7 +16,7 @@
     - [ ] Selectable which way is down (+/- x, y or z) since not all STL have the same orientation
     - [x] Stock should update when tool is updated (consider adding a "generate" button to trigger update)
     - [ ] Allow user to specify stock offset/extra material in STL coordinates.
-    - [ ] Visualize updated stock after each toolpath segment
+    - [x] Visualize updated stock after each toolpath segment (in progress)
     - [ ] Add unit tests for stock update logic
     - [ ] Design abstraction layer for stock representation (heightmap or mesh)
         - [ ] Investigate librarares (three-csgmesh, three-bvh-csg) for mesh stock operations (intersect/subtract)

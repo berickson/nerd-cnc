@@ -7,8 +7,8 @@ nerd-cnc is a web-based application designed to assist users in creating tool pa
 ## Features
 - **Tool Path Creation**: Users can create and modify tool paths for CNC milling.
 - **3D Canvas**: A visual representation of the tool paths and imported models.
-- **File Import**: Ability to import STEP files for further processing.
-- **GCODE Generation**: Automatically generate GCODE from the created tool paths.
+- **File Import**: Ability to import STL files for further processing (STEP file support planned).
+- **GCODE Generation**: Basic GCODE generation is implemented. Advanced options like feedrate, safe Z, and units are planned.
 
 ## Project Structure
 - **src/components**: Reusable UI components such as buttons, forms, and visualizers.
@@ -43,14 +43,14 @@ To generate accurate 2.5D toolpaths from STL meshes, we use a heightmap represen
 - **Vertex-based heightmaps** are fast but can miss surface details between vertices, especially for large triangles.
 - **Raycasting for every toolpath point** is accurate but slow.
 
-### Our Approach
+### Our Plan
 
-We use a hybrid strategy:
+Hybrid strategy:
 
 1. **Triangle Sampling:**  
    Each triangle is rasterized onto the heightmap grid, updating every covered cell with the maximum Z value encountered. This ensures even large triangles contribute heights to the grid interior, not just at their corners.
 
-2. **Exact Mode (optional):**  
+2. **Exact Mode (planned):**  
    For each grid cell, we store references to overlapping triangles. When a toolpath point needs an exact height, we check the triangles for that cell and compute the precise intersection, ensuring no features are missed.
 
 ### Why This Matters
