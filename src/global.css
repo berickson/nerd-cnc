@@ -1,3 +1,47 @@
+
+
 input {
     margin: 0 0.5ch;
+}
+
+/* VS Code-like font and compact sizing for control panel */
+.control-panel {
+  font-family: var(--vscode-font-family, "Segoe UI", "Liberation Sans", Arial, sans-serif);
+  font-size: 13px;
+  min-width: 200px;
+  max-width: 280px;
+  line-height: 1.4;
+  background: #222;
+  color: #fff;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 8px #0008;
+}
+
+.control-panel input[type="number"],
+.control-panel input[type="text"],
+.control-panel select {
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  border: 1px solid #444;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  box-sizing: border-box;
+  width: 70px;
+  margin-left: 6px;
+}
+
+.control-panel button {
+  font-size: 13px;
+  padding: 4px 0;
+  border-radius: 2px;
+  border: none;
+  /* background: #4c50d5;
+  color: #ffffff; */
+  font-weight: bold;
+  width: 100%;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  cursor: pointer;
 }

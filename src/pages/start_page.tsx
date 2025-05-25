@@ -25,6 +25,10 @@ function compute_linewidth(box: THREE.Box3): number {
 }
 
 const StartPage: React.FC = () => {
+
+  //////////////////////////////////////////////////////////
+  // ref variables
+
   const mount_ref = useRef<HTMLDivElement>(null);
   const scene_ref = useRef<THREE.Scene>(null);
   const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
@@ -33,6 +37,9 @@ const StartPage: React.FC = () => {
   const tool_mesh_ref = useRef<THREE.Group | null>(null);
   const renderer_ref = useRef<THREE.WebGLRenderer | null>(null);
 
+  //////////////////////////////////////////////////////////
+  // react state hooks
+
   const [boxSize, set_box_size] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
   const [box_bounds, set_box_bounds] = React.useState<{ min: THREE.Vector3, max: THREE.Vector3 } | null>(null); const [show_mesh, set_show_mesh] = React.useState(true);
   const [show_toolpath, set_show_toolpath] = React.useState(true);
@@ -40,6 +47,8 @@ const StartPage: React.FC = () => {
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
+  const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
+  const [simulation_dirty, set_simulation_dirty] = React.useState(false);
 
   const [tool, set_tool] = React.useState({
     cutter_diameter: 3.175,    // all dimensions are mm
@@ -51,6 +60,10 @@ const StartPage: React.FC = () => {
   const [tool_error, set_tool_error] = React.useState<string | null>(null);
   const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
   const [last_tool, set_last_tool] = React.useState(tool);
+
+  //////////////////////////////////////////////////////////
+  // effects
+
   // initialize three.js scene, camera, renderer, and controls on mount
   useEffect(() => {
     if (!mount_ref.current) return; // Add this guard
@@ -337,7 +350,6 @@ const StartPage: React.FC = () => {
     // ...move your simulation and toolpath code here from handle_file_change...
     const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
     set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-    console.log('handle_file_change: set_box_bounds', box.min, box.max);
     const linewidth = compute_linewidth(box);
     const boxHelper = new THREE.Box3Helper(box, 0xff0000);
     boxHelper.userData.is_bounding_box = true;
@@ -355,8 +367,7 @@ const StartPage: React.FC = () => {
 
 
     // Tool path parameters (all in STL coordinates)
-    const tool_diameter = 0.02; // meters
-    const step_over = tool_diameter * 0.7; // 70% of tool diameter
+    const step_over = tool.cutter_diameter * 0.7; // 70% of tool diameter
 
     // Raster path generation (along X, stepping in Y)
     const min_x = box.min.x, max_x = box.max.x;
@@ -369,8 +380,8 @@ const StartPage: React.FC = () => {
       max_x: max_x,
       min_y: min_y,
       max_y: max_y,
-      res_x: 200, // adjust for resolution
-      res_y: 200,
+      res_x: toolpath_grid_resolution,
+      res_y: toolpath_grid_resolution,
     };
     const heightmap = heightmap_from_mesh(geometry, grid);
 
@@ -469,6 +480,7 @@ const StartPage: React.FC = () => {
     if (!stl_geometry || !box_bounds) return;
     set_last_tool(tool);
     run_simulation(stl_geometry, tool, box_bounds);
+    set_simulation_dirty(false);
   }
 
   // handle_file_change: loads STL, generates heightmap, toolpath, simulates material removal, updates visualization
@@ -497,13 +509,13 @@ const StartPage: React.FC = () => {
       scene_ref.current!.add(mesh);
       mesh.visible = show_mesh;
 
-      // Compute and add bounding box helper
+      // Compute and set bounding box for the new mesh
       geometry.computeBoundingBox();
       if (geometry.boundingBox) {
         const box = new THREE.Box3().setFromObject(mesh);
-        run_simulation(geometry, tool, { min: box.min, max: box.max });
-        ;
+        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
       }
+      set_simulation_dirty(true);
     };
     reader.readAsArrayBuffer(file);
   };
@@ -512,22 +524,12 @@ const StartPage: React.FC = () => {
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
 
       {/* Control Panel */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 20,
-          left: 20,
-          zIndex: 20,
-          background: '#222',
-          color: '#fff',
-          borderRadius: 8,
-          padding: 16,
-          boxShadow: '0 2px 8px #0008',
-          fontFamily: 'sans-serif',
-          minWidth: 220,
-          maxWidth: 320,
-        }}
-      >
+      <div className="control-panel" style={{
+        position: 'absolute',
+        top: 20,
+        left: 20,
+        zIndex: 20,
+      }}>
         {/* File Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>File</div>
@@ -549,6 +551,29 @@ const StartPage: React.FC = () => {
           </button>
         </div>
 
+        {/* Calculation Parameters Section */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
+          <label>
+            Toolpath Grid Resolution
+            <input
+              type="number"
+              min={20}
+              max={1000}
+              step={10}
+              value={toolpath_grid_resolution}
+              onChange={e => {
+                set_toolpath_grid_resolution(Number(e.target.value));
+                set_simulation_dirty(true);
+              }}
+              style={{ width: 80, marginLeft: 8 }}
+            />
+            <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
+              (higher = smoother, slower)
+            </span>
+          </label>
+        </div>
+
         {/* Tool Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Tool</div>
@@ -566,6 +591,7 @@ const StartPage: React.FC = () => {
                 onChange={e => {
                   const v = parseFloat(e.target.value);
                   set_tool(t => ({ ...t, cutter_diameter: v }));
+                  set_simulation_dirty(true);
                 }}
               />
               mm
@@ -625,8 +651,9 @@ const StartPage: React.FC = () => {
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
           <button
-            style={{ width: '100%', background: '#4caf50', color: '#fff', fontWeight: 'bold' }}
+            style={{ width: '100%' }}
             onClick={handle_generate}
+            disabled={!simulation_dirty}
           >
             Generate
           </button>
