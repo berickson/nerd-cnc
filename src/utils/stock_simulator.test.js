@@ -209,3 +209,25 @@ test('log mesh for 1x1 heightmap', () => {
   console.log('positions:', Array.from(positions));
   console.log('indices:', Array.from(indices));
 });
+
+describe('simulate_material_removal', () => {
+  it('removes material in a ball shape for ball-nose tools', () => {
+    const stock = create_heightmap_stock(10, 10, 1, 5);
+    const tool = {
+      cutter_diameter: 2,
+      type: 'ball'
+    };
+    const toolpath = [
+      { x: 5, y: 5, z: 3 } // Tool center at (5, 5), cutting down to z = 3
+    ];
+
+    simulate_material_removal(stock, tool, toolpath);
+
+    // Check heights around the tool center
+    expect(stock.get_height(5, 5)).toBeCloseTo(2, 1); // Center point (adjusted for ball curvature)
+    expect(stock.get_height(4, 5)).toBeCloseTo(3, 1); // Edge of the ball
+    expect(stock.get_height(6, 5)).toBeCloseTo(3, 1);
+    expect(stock.get_height(5, 4)).toBeCloseTo(3, 1);
+    expect(stock.get_height(5, 6)).toBeCloseTo(3, 1);
+  });
+});

@@ -7,7 +7,7 @@
  * @param {number} params.shank_diameter - Diameter of the shank (meters).
  * @param {number} params.overall_length - OAL - Total tool length (meters).
  * @param {number} params.length_of_cut - LOC - Length of cutting part (meters).
- * @param {string} params.type - Tool type, e.g. 'flat'.
+ * @param {string} params.type - Tool type, e.g. 'flat', 'ball'.
  * @returns {Object} Tool object.
  */
 function create_tool(params) {
@@ -37,6 +37,9 @@ function create_tool(params) {
   }
   if (!type || typeof type !== 'string') {
     throw new Error('type must be a string');
+  }
+  if (!['flat', 'ball'].includes(type)) {
+    throw new Error(`Unsupported tool type: ${type}`);
   }
 
   return {

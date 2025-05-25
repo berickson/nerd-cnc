@@ -41,47 +41,38 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
   };
 }
 
-// Simulate material removal for a flat endmill along a toolpath
+// Simulate material removal for a flat or ball endmill along a toolpath
 // tool: { cutter_diameter: number, type: string }
 // toolpath: array of { x, y, z }
 function simulate_material_removal(stock, tool, toolpath) {
-
-  // Log min and max x, y, z values from the toolpath for debugging alignment
-  if (toolpath.length > 0) {
-    let min_x = Infinity, max_x = -Infinity;
-    let min_y = Infinity, max_y = -Infinity;
-    let min_z = Infinity, max_z = -Infinity;
-    for (const pt of toolpath) {
-      if (pt.x < min_x) min_x = pt.x;
-      if (pt.x > max_x) max_x = pt.x;
-      if (pt.y < min_y) min_y = pt.y;
-      if (pt.y > max_y) max_y = pt.y;
-      if (pt.z < min_z) min_z = pt.z;
-      if (pt.z > max_z) max_z = pt.z;
-    }
-    console.log('Toolpath extents:',
-      'x:', min_x, 'to', max_x,
-      'y:', min_y, 'to', max_y,
-      'z:', min_z, 'to', max_z
-    );
-  } else {
+  if (toolpath.length === 0) {
     console.log('Toolpath is empty, no material removal simulated.');
+    return;
   }
-  // Only flat endmill supported for now
-  if (tool.type !== 'flat') return;
+
   const r = tool.cutter_diameter / 2;
   const step = stock.grid_size;
 
   for (const pt of toolpath) {
-    // For each grid cell within tool radius
     for (let dx = -r; dx <= r; dx += step) {
       for (let dy = -r; dy <= r; dy += step) {
-        if (dx * dx + dy * dy > r * r) continue;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > r) continue;
+
         const x = pt.x + dx;
         const y = pt.y + dy;
-        // Remove material only if tool is lower than current height
-        if (stock.get_height(x, y) > pt.z) {
-          stock.set_height(x, y, pt.z);
+        let z = pt.z;
+
+        if (tool.type === 'ball') {
+          // Adjust Z for ball-nose curvature
+          const dz = Math.sqrt(Math.max(0, r * r - distance * distance));
+          z = Math.min(z, pt.z - dz); // Ensure the Z value is correctly adjusted
+        }
+
+        // Update heightmap only if the calculated Z is lower than the current height
+        if (stock.get_height(x, y) > z) {
+          stock.set_height(x, y, z);
+          console.log(`Heightmap updated: x=${x}, y=${y}, z=${z}`);
         }
       }
     }

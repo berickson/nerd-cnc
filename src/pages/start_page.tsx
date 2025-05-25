@@ -8,6 +8,7 @@ import { create_heightmap_stock, simulate_material_removal, heightmap_to_solid_m
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import '../global.css'
 declare global {
   interface Window {
@@ -226,13 +227,41 @@ const StartPage: React.FC = () => {
     // Create a group for the tool
     const tool_group = new THREE.Group();
 
-    // Cutter (lower part) - light gray
-    const cutter_geometry = new THREE.CylinderGeometry(
-      tool.cutter_diameter / 2,
-      tool.cutter_diameter / 2,
-      tool.length_of_cut,
-      32
-    );
+    // Cutter (lower part)
+    let cutter_geometry;
+    if (tool.type === 'ball') {
+      // Ball-nose: cylinder + hemisphere
+      const cyl_height = Math.max(tool.length_of_cut - tool.cutter_diameter / 2, 0.001);
+      const cyl_geom = new THREE.CylinderGeometry(
+        tool.cutter_diameter / 2,
+        tool.cutter_diameter / 2,
+        cyl_height,
+        32
+      );
+      cyl_geom.translate(0, tool.cutter_diameter / 4, 0); // move cylinder so its base is at y=0
+      const sphere_geom = new THREE.SphereGeometry(
+        tool.cutter_diameter / 2,
+        32,
+        16,
+        0,
+        Math.PI * 2,
+        -Math.PI, // start at bottom pole
+        Math.PI / 2 // only lower hemisphere
+      );
+      sphere_geom.translate(0, -cyl_height / 2 + tool.cutter_diameter/4, 0); // move hemisphere so its pole is at y=0
+      cutter_geometry = BufferGeometryUtils.mergeGeometries([
+        cyl_geom,
+        sphere_geom
+      ]);
+    } else {
+      // Flat endmill: just a cylinder
+      cutter_geometry = new THREE.CylinderGeometry(
+        tool.cutter_diameter / 2,
+        tool.cutter_diameter / 2,
+        tool.length_of_cut,
+        32
+      );
+    }
     const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0 });
     const cutter_mesh = new THREE.Mesh(cutter_geometry, cutter_material);
     cutter_mesh.position.y = tool.length_of_cut / 2; // build up from origin
@@ -357,9 +386,11 @@ const StartPage: React.FC = () => {
     scene_ref.current!.add(boxHelper);
     boxHelper.visible = show_bounding_box;
 
-    if (camera_ref.current && controls_ref.current) {
-      fit_camera_to_object(camera_ref.current, controls_ref.current, box);
-    }
+    // Removed camera reset here to preserve user view
+    // if (camera_ref.current && controls_ref.current) {
+    //   fit_camera_to_object(camera_ref.current, controls_ref.current, box);
+    // }
+
     // Set bounding box size in state
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -677,10 +708,13 @@ const StartPage: React.FC = () => {
               Type
               <select
                 value={tool.type}
-                onChange={e => set_tool(t => ({ ...t, type: e.target.value }))}
+                onChange={e => {
+                  set_tool(t => ({ ...t, type: e.target.value }));
+                  set_simulation_dirty(true);
+                }}
               >
                 <option value="flat">Flat</option>
-                {/* Future: <option value="ball">Ball</option> etc. */}
+                <option value="ball">Ball</option>
               </select>
             </label>
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}

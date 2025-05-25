@@ -16,6 +16,21 @@ describe('create_tool', () => {
     expect(tool.type).toBe('flat');
   });
 
+  it('creates a ball tool with all required properties', () => {
+    const tool = create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'ball'
+    });
+    expect(tool.cutter_diameter).toBe(0.01);
+    expect(tool.shank_diameter).toBe(0.008);
+    expect(tool.overall_length).toBe(0.05);
+    expect(tool.length_of_cut).toBe(0.02);
+    expect(tool.type).toBe('ball');
+  });
+
   it('throws if cutter_diameter is zero or negative', () => {
     expect(() => create_tool({
       cutter_diameter: 0,
@@ -104,5 +119,15 @@ describe('create_tool', () => {
       length_of_cut: 0.02,
       type: 123
     })).toThrow();
+  });
+
+  it('throws if type is unsupported', () => {
+    expect(() => create_tool({
+      cutter_diameter: 0.01,
+      shank_diameter: 0.008,
+      overall_length: 0.05,
+      length_of_cut: 0.02,
+      type: 'unsupported'
+    })).toThrow('Unsupported tool type: unsupported');
   });
 });
