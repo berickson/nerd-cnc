@@ -318,6 +318,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.userData.is_stl = true;
     scene_ref.current!.add(mesh);
+    mesh.visible = show_mesh;
 
     // Compute and add bounding box helper
     geometry.computeBoundingBox();
@@ -329,6 +330,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       const boxHelper = new THREE.Box3Helper(box, 0xff0000);
       boxHelper.userData.is_bounding_box = true;
       scene_ref.current!.add(boxHelper);
+      boxHelper.visible = show_bounding_box;
 
       if (camera_ref.current && controls_ref.current) {
         fit_camera_to_object(camera_ref.current, controls_ref.current, box);
@@ -412,6 +414,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
         line.computeLineDistances();
         line.userData.is_tool_path = true;
         scene_ref.current!.add(line);
+        line.visible = show_toolpath
         reverse = !reverse;
       }
 
