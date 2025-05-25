@@ -8,7 +8,7 @@ import { create_heightmap_stock, simulate_material_removal, heightmap_to_solid_m
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-
+import '../global.css'
 declare global {
   interface Window {
     current_heightmap?: any;
@@ -31,6 +31,7 @@ const StartPage: React.FC = () => {
   const camera_ref = useRef<THREE.OrthographicCamera | null>(null);
   const controls_ref = useRef<OrbitControls | null>(null);
   const tool_mesh_ref = useRef<THREE.Group | null>(null);
+  const renderer_ref = useRef<THREE.WebGLRenderer | null>(null);
 
   const [boxSize, set_box_size] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
   const [box_bounds, set_box_bounds] = React.useState<{ min: THREE.Vector3, max: THREE.Vector3 } | null>(null); const [show_mesh, set_show_mesh] = React.useState(true);
@@ -39,7 +40,7 @@ const StartPage: React.FC = () => {
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
-
+    
   const [tool, set_tool] = React.useState({
     cutter_diameter: 3.175,    // all dimensions are mm
     shank_diameter: 3.175,
@@ -85,6 +86,7 @@ const StartPage: React.FC = () => {
     // Set up renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(width, height);
+    renderer_ref.current = renderer;
     mount_ref.current.appendChild(renderer.domElement);
 
     // Add OrbitControls
@@ -108,6 +110,41 @@ const StartPage: React.FC = () => {
     };
   }, []);
 
+
+
+   // window resize handler
+  useEffect(() => {
+    if (!mount_ref.current) return;
+  
+    function handle_resize() {
+      if (!mount_ref.current || !camera_ref.current || !renderer_ref.current) return;
+      const width = mount_ref.current.clientWidth;
+      const height = mount_ref.current.clientHeight;
+      renderer_ref.current.setSize(width, height);
+      const aspect = width / height;
+      const frustumSize = 100;
+      camera_ref.current.left = -frustumSize * aspect / 2;
+      camera_ref.current.right = frustumSize * aspect / 2;
+      camera_ref.current.top = frustumSize / 2;
+      camera_ref.current.bottom = -frustumSize / 2;
+      camera_ref.current.updateProjectionMatrix();
+    }
+  
+    window.addEventListener('resize', handle_resize);
+  
+    // Initial resize
+    handle_resize();
+  
+    // Cleanup
+  return () => {
+    // Use renderer_ref.current instead of renderer
+    if (renderer_ref.current) renderer_ref.current.dispose();
+    window.removeEventListener('resize', handle_resize);
+    if (mount_ref.current && renderer_ref.current) {
+      mount_ref.current.removeChild(renderer_ref.current.domElement);
+    }
+  };
+  }, []);
 
   // show the stock mesh in the 3D scene whenever the show_stock toggle changes
 useEffect(() => {
@@ -378,7 +415,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       // 2. Generate toolpath in STL coordinates
       toolpath_points_ref.current = [];
       let reverse = false;
-      const points_per_line = 100;
+      const points_per_line = 200;
       for (
         let y_idx = 0;
         y_idx < grid.res_y;
@@ -504,7 +541,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
             style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
           >
             <label>
-              Cutter Diameter (m)
+              Cutter Diameter 
               <input
                 type="number"
                 min="0.1"
@@ -515,9 +552,10 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
                   set_tool(t => ({ ...t, cutter_diameter: v }));
                 }}
               />
+              mm
             </label>
             <label>
-              Shank Diameter (m)
+              Shank Diameter
               <input
                 type="number"
                 min="0.1"
@@ -528,9 +566,10 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
                   set_tool(t => ({ ...t, shank_diameter: v }));
                 }}
               />
+              mm
             </label>
             <label>
-              Overall Length (m)
+              Overall Length
               <input
                 type="number"
                 min="0.1"
@@ -541,9 +580,10 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
                   set_tool(t => ({ ...t, overall_length: v }));
                 }}
               />
+              mm
             </label>
             <label>
-              Length of Cut (m)
+              Length of Cut
               <input
                 type="number"
                 min="0.1"
@@ -554,6 +594,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
                   set_tool(t => ({ ...t, length_of_cut: v }));
                 }}
               />
+              mm
             </label>
             <label>
               Type
