@@ -47,6 +47,7 @@ const StartPage: React.FC = () => {
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
+  const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
   const [simulation_dirty, set_simulation_dirty] = React.useState(false);
 
@@ -367,7 +368,7 @@ const StartPage: React.FC = () => {
 
 
     // Tool path parameters (all in STL coordinates)
-    const step_over = tool.cutter_diameter * 0.7; // 70% of tool diameter
+    const step_over = tool.cutter_diameter * step_over_percent;
 
     // Raster path generation (along X, stepping in Y)
     const min_x = box.min.x, max_x = box.max.x;
@@ -568,6 +569,21 @@ const StartPage: React.FC = () => {
               }}
               style={{ width: 80, marginLeft: 8 }}
             />
+            </label>
+            <label>
+            Tool Step Over (% of Cutter Diameter)
+            <input
+              type="number"
+              min={0.05}
+              max={1.0}
+              step={0.01  }
+              value={step_over_percent}
+              onChange={e => {
+                set_step_over_percent(Number(e.target.value));
+                set_simulation_dirty(true);
+              }}
+              style={{ width: 80, marginLeft: 8 }}
+            /> 
             <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
               (higher = smoother, slower)
             </span>
