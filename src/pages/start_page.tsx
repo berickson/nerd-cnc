@@ -239,20 +239,23 @@ const StartPage: React.FC = () => {
         32
       );
       cyl_geom.translate(0, tool.cutter_diameter / 4, 0); // move cylinder so its base is at y=0
+      // SphereGeometry(radius, widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength)
       const sphere_geom = new THREE.SphereGeometry(
-        tool.cutter_diameter / 2,
-        32,
-        16,
-        0,
-        Math.PI * 2,
-        -Math.PI, // start at bottom pole
-        Math.PI / 2 // only lower hemisphere
+        tool.cutter_diameter / 2, // radius
+        32,                      // widthSegments
+        16,                      // heightSegments
+        0,                       // phiStart
+        Math.PI * 2,             // phiLength
+        -Math.PI,                // thetaStart (start at bottom pole)
+        Math.PI / 2              // thetaLength (only lower hemisphere)
       );
       sphere_geom.translate(0, -cyl_height / 2 + tool.cutter_diameter/4, 0); // move hemisphere so its pole is at y=0
       cutter_geometry = BufferGeometryUtils.mergeGeometries([
         cyl_geom,
         sphere_geom
       ]);
+      // Recompute normals so the ball is visible from all sides
+      cutter_geometry.computeVertexNormals();
     } else {
       // Flat endmill: just a cylinder
       cutter_geometry = new THREE.CylinderGeometry(
@@ -262,7 +265,8 @@ const StartPage: React.FC = () => {
         32
       );
     }
-    const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0 });
+    // Use double-sided material so the ball-nose is visible from all angles
+    const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0, side: THREE.DoubleSide });
     const cutter_mesh = new THREE.Mesh(cutter_geometry, cutter_material);
     cutter_mesh.position.y = tool.length_of_cut / 2; // build up from origin
     tool_group.add(cutter_mesh);
