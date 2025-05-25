@@ -14,6 +14,8 @@
     - [x] Simulate material removal for flat endmill using heightmap
     - [x] Adopt STL (natural) coordinates for all simulation and toolpath operations.
     - [x] Remove any translation of toolpath or stock to (0,0,0).
+    - [ ] Selectable which way is down (+/- x, y or z) since not all STL have the same orientation
+    - [x] Stock should update when tool is updated (consider adding a "generate" button to trigger update)
     - [ ] Allow user to specify stock offset/extra material in STL coordinates.
     - [ ] Visualize updated stock after each toolpath segment
     - [ ] Add unit tests for stock update logic

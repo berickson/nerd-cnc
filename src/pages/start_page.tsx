@@ -40,7 +40,7 @@ const StartPage: React.FC = () => {
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
-    
+
   const [tool, set_tool] = React.useState({
     cutter_diameter: 3.175,    // all dimensions are mm
     shank_diameter: 3.175,
@@ -49,7 +49,8 @@ const StartPage: React.FC = () => {
     type: 'flat'
   });
   const [tool_error, set_tool_error] = React.useState<string | null>(null);
-
+  const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
+  const [last_tool, set_last_tool] = React.useState(tool);
   // initialize three.js scene, camera, renderer, and controls on mount
   useEffect(() => {
     if (!mount_ref.current) return; // Add this guard
@@ -112,10 +113,10 @@ const StartPage: React.FC = () => {
 
 
 
-   // window resize handler
+  // window resize handler
   useEffect(() => {
     if (!mount_ref.current) return;
-  
+
     function handle_resize() {
       if (!mount_ref.current || !camera_ref.current || !renderer_ref.current) return;
       const width = mount_ref.current.clientWidth;
@@ -129,50 +130,50 @@ const StartPage: React.FC = () => {
       camera_ref.current.bottom = -frustumSize / 2;
       camera_ref.current.updateProjectionMatrix();
     }
-  
+
     window.addEventListener('resize', handle_resize);
-  
+
     // Initial resize
     handle_resize();
-  
+
     // Cleanup
-  return () => {
-    // Use renderer_ref.current instead of renderer
-    if (renderer_ref.current) renderer_ref.current.dispose();
-    window.removeEventListener('resize', handle_resize);
-    if (mount_ref.current && renderer_ref.current) {
-      mount_ref.current.removeChild(renderer_ref.current.domElement);
-    }
-  };
+    return () => {
+      // Use renderer_ref.current instead of renderer
+      if (renderer_ref.current) renderer_ref.current.dispose();
+      window.removeEventListener('resize', handle_resize);
+      if (mount_ref.current && renderer_ref.current) {
+        mount_ref.current.removeChild(renderer_ref.current.domElement);
+      }
+    };
   }, []);
 
   // show the stock mesh in the 3D scene whenever the show_stock toggle changes
-useEffect(() => {
-if (!scene_ref.current) return;
-const scene = scene_ref.current; // Use 'scene' instead of 'scene_ref.current' below
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    const scene = scene_ref.current; // Use 'scene' instead of 'scene_ref.current' below
 
-  // Remove previous stock mesh if present
-  if (stock_mesh_ref.current) {
-    scene.remove(stock_mesh_ref.current);
-    stock_mesh_ref.current = null;
-  }
-  // Remove previous heightmap mesh if present
-  if (scene.children) {
-    scene.children
-      .filter(obj => obj.userData.is_stock_heightmap)
-      .forEach(obj => scene.remove(obj));
-  }
+    // Remove previous stock mesh if present
+    if (stock_mesh_ref.current) {
+      scene.remove(stock_mesh_ref.current);
+      stock_mesh_ref.current = null;
+    }
+    // Remove previous heightmap mesh if present
+    if (scene.children) {
+      scene.children
+        .filter(obj => obj.userData.is_stock_heightmap)
+        .forEach(obj => scene.remove(obj));
+    }
 
-  // Show solid box for stock
-  if (show_stock && window.current_heightmap && box_bounds) {
-    const min_z = box_bounds.min.z;
-    const mesh = heightmap_to_solid_mesh(window.current_heightmap);
-    mesh.userData.is_stock_heightmap = true;
-    // mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
-    scene.add(mesh);
-  }
+    // Show solid box for stock
+    if (show_stock && window.current_heightmap && box_bounds) {
+      const min_z = box_bounds.min.z;
+      const mesh = heightmap_to_solid_mesh(window.current_heightmap);
+      mesh.userData.is_stock_heightmap = true;
+      // mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
+      scene.add(mesh);
+    }
 
-}, [show_stock, box_bounds, scene_ref.current]);
+  }, [show_stock, box_bounds, scene_ref.current]);
 
   // Section: tool effect: show the tool in the 3D scene whenever tool parameters or bounding box change
   useEffect(() => {
@@ -331,80 +332,55 @@ const scene = scene_ref.current; // Use 'scene' instead of 'scene_ref.current' b
   };
 
 
+  function run_simulation(geometry: THREE.BufferGeometry, tool: any, box_bounds: { min: THREE.Vector3, max: THREE.Vector3 }) {
+    // Assumes geometry has boundingBox computed, tool is a flat object, box_bounds is {min, max}
+    // ...move your simulation and toolpath code here from handle_file_change...
+    const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
+    set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+    console.log('handle_file_change: set_box_bounds', box.min, box.max);
+    const linewidth = compute_linewidth(box);
+    const boxHelper = new THREE.Box3Helper(box, 0xff0000);
+    boxHelper.userData.is_bounding_box = true;
+    scene_ref.current!.add(boxHelper);
+    boxHelper.visible = show_bounding_box;
 
-  // handle_file_change: loads STL, generates heightmap, toolpath, simulates material removal, updates visualization
-const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
-  console.log('handleFileChange called', event.target.files?.[0]);
-  const file = event.target.files?.[0];
-  if (!file || !scene_ref.current) return;
+    if (camera_ref.current && controls_ref.current) {
+      fit_camera_to_object(camera_ref.current, controls_ref.current, box);
+    }
+    // Set bounding box size in state
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    set_box_size(size);
+    set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
 
-  set_box_size(new THREE.Vector3(0, 0, 0));
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const contents = e.target?.result;
-    if (!contents) return;
 
-    // Remove previous STL meshes and bounding boxes
-    scene_ref.current!.children
-      .filter(obj => obj.userData.is_stl || obj.userData.is_bounding_box || obj.userData.is_tool_path)
-      .forEach(obj => scene_ref.current!.remove(obj));
+    // Tool path parameters (all in STL coordinates)
+    const tool_diameter = 0.02; // meters
+    const step_over = tool_diameter * 0.7; // 70% of tool diameter
 
-    const loader = new STLLoader();
-    const geometry = loader.parse(contents as ArrayBuffer);
-    const material = new THREE.MeshNormalMaterial();
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.userData.is_stl = true;
-    scene_ref.current!.add(mesh);
-    mesh.visible = show_mesh;
+    // Raster path generation (along X, stepping in Y)
+    const min_x = box.min.x, max_x = box.max.x;
+    const min_y = box.min.y, max_y = box.max.y;
+    const max_z = box.max.z + 0.010; // Start just above the stock
 
-    // Compute and add bounding box helper
-    geometry.computeBoundingBox();
-    if (geometry.boundingBox) {
-      const box = new THREE.Box3().setFromObject(mesh);
-      set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-      console.log('handle_file_change: set_box_bounds', box.min, box.max);
-      const linewidth = compute_linewidth(box);
-      const boxHelper = new THREE.Box3Helper(box, 0xff0000);
-      boxHelper.userData.is_bounding_box = true;
-      scene_ref.current!.add(boxHelper);
-      boxHelper.visible = show_bounding_box;
+    // Build the heightmap once, using STL coordinates
+    const grid = {
+      min_x: min_x,
+      max_x: max_x,
+      min_y: min_y,
+      max_y: max_y,
+      res_x: 200, // adjust for resolution
+      res_y: 200,
+    };
+    const heightmap = heightmap_from_mesh(geometry, grid);
 
-      if (camera_ref.current && controls_ref.current) {
-        fit_camera_to_object(camera_ref.current, controls_ref.current, box);
-      }
-      // Set bounding box size in state
-      const size = new THREE.Vector3();
-      box.getSize(size);
-      set_box_size(size);
-      set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-
-      // Tool path parameters (all in STL coordinates)
-      const tool_diameter = 0.02; // meters
-      const step_over = tool_diameter * 0.7; // 70% of tool diameter
-
-      // Raster path generation (along X, stepping in Y)
-      const min_x = box.min.x, max_x = box.max.x;
-      const min_y = box.min.y, max_y = box.max.y;
-      const max_z = box.max.z + 0.010; // Start just above the stock
-
-      // Build the heightmap once, using STL coordinates
-      const grid = {
-        min_x: min_x,
-        max_x: max_x,
-        min_y: min_y,
-        max_y: max_y,
-        res_x: 200, // adjust for resolution
-        res_y: 200,
-      };
-      const heightmap = heightmap_from_mesh(geometry, grid);
-
-      // 1. Create a stock object from the heightmap bounds (STL coordinates)
-      const stock_width = max_x - min_x;
-      const stock_height = max_y - min_y;
-      const stock_grid_size = stock_width / grid.res_x;
-      const stock_initial_height = box.max.z;
-      // Assumption: stock origin is at (min_x, min_y, min_z)
-      const stock = create_heightmap_stock(
+    // 1. Create a stock object from the heightmap bounds (STL coordinates)
+    const stock_width = max_x - min_x;
+    const stock_height = max_y - min_y;
+    const stock_grid_size = stock_width / grid.res_x;
+    const stock_initial_height = box.max.z;
+    // Assumption: stock origin is at (min_x, min_y, min_z)
+    const stock = create_heightmap_stock(
       stock_width,
       stock_height,
       stock_grid_size,
@@ -412,85 +388,125 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
       min_x, // origin_x
       min_y  // origin_y
     );
-      // 2. Generate toolpath in STL coordinates
-      toolpath_points_ref.current = [];
-      let reverse = false;
-      const points_per_line = 200;
+    // 2. Generate toolpath in STL coordinates
+    toolpath_points_ref.current = [];
+    let reverse = false;
+    const points_per_line = 200;
+    for (
+      let y_idx = 0;
+      y_idx < grid.res_y;
+      y_idx += Math.max(1, Math.round(step_over / ((max_y - min_y) / grid.res_y)))
+    ) {
+      const y = min_y + (max_y - min_y) * (y_idx / grid.res_y);
+      const line_points: THREE.Vector3[] = [];
       for (
-        let y_idx = 0;
-        y_idx < grid.res_y;
-        y_idx += Math.max(1, Math.round(step_over / ((max_y - min_y) / grid.res_y)))
+        let x_idx = 0;
+        x_idx < grid.res_x;
+        x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
       ) {
-        const y = min_y + (max_y - min_y) * (y_idx / grid.res_y);
-        const line_points: THREE.Vector3[] = [];
-        for (
-          let x_idx = 0;
-          x_idx < grid.res_x;
-          x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
-        ) {
-          const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
-          const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
-          line_points.push(new THREE.Vector3(x, y, z));
-          toolpath_points_ref.current.push({ x, y, z });
-        }
-        if (reverse) line_points.reverse();
-
-        const positions = [];
-        for (const pt of line_points) {
-          positions.push(pt.x, pt.y, pt.z);
-        }
-        const line_geometry = new LineGeometry();
-        line_geometry.setPositions(positions);
-        const line_material = new LineMaterial({
-          color: 0x00ff00,
-          linewidth: linewidth,
-          alphaToCoverage: true
-        });
-        line_material.resolution.set(window.innerWidth, window.innerHeight);
-        const line = new Line2(line_geometry, line_material);
-        line.computeLineDistances();
-        line.userData.is_tool_path = true;
-        scene_ref.current!.add(line);
-        line.visible = show_toolpath
-        reverse = !reverse;
+        const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
+        const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
+        line_points.push(new THREE.Vector3(x, y, z));
+        toolpath_points_ref.current.push({ x, y, z });
       }
+      if (reverse) line_points.reverse();
 
-      // 3. Log toolpath extents for debugging
-      if (toolpath_points_ref.current.length > 0) {
-        let min_tx = Infinity, max_tx = -Infinity;
-        let min_ty = Infinity, max_ty = -Infinity;
-        let min_tz = Infinity, max_tz = -Infinity;
-        for (const pt of toolpath_points_ref.current) {
-          if (pt.x < min_tx) min_tx = pt.x;
-          if (pt.x > max_tx) max_tx = pt.x;
-          if (pt.y < min_ty) min_ty = pt.y;
-          if (pt.y > max_ty) max_ty = pt.y;
-          if (pt.z < min_tz) min_tz = pt.z;
-          if (pt.z > max_tz) max_tz = pt.z;
-        }
-        console.log(
-          'Toolpath extents:',
-          'x:', min_tx, 'to', max_tx,
-          'y:', min_ty, 'to', max_ty,
-          'z:', min_tz, 'to', max_tz
-        );
-      } else {
-        console.log('Toolpath is empty after generation!');
+      const positions = [];
+      for (const pt of line_points) {
+        positions.push(pt.x, pt.y, pt.z);
       }
-
-      // 4. Simulate material removal after toolpath is generated (all in STL coordinates)
-      simulate_material_removal(stock, tool, toolpath_points_ref.current);
-
-      // 5. Assign to window.current_heightmap for visualization effect
-      window.current_heightmap = stock;
-
-      // 6. Force update by toggling show_stock or updating box_bounds
-      set_show_stock(false);
-      setTimeout(() => set_show_stock(true), 0);
+      const line_geometry = new LineGeometry();
+      line_geometry.setPositions(positions);
+      const line_material = new LineMaterial({
+        color: 0x00ff00,
+        linewidth: linewidth,
+        alphaToCoverage: true
+      });
+      line_material.resolution.set(window.innerWidth, window.innerHeight);
+      const line = new Line2(line_geometry, line_material);
+      line.computeLineDistances();
+      line.userData.is_tool_path = true;
+      scene_ref.current!.add(line);
+      line.visible = show_toolpath
+      reverse = !reverse;
     }
+
+    // 3. Log toolpath extents for debugging
+    if (toolpath_points_ref.current.length > 0) {
+      let min_tx = Infinity, max_tx = -Infinity;
+      let min_ty = Infinity, max_ty = -Infinity;
+      let min_tz = Infinity, max_tz = -Infinity;
+      for (const pt of toolpath_points_ref.current) {
+        if (pt.x < min_tx) min_tx = pt.x;
+        if (pt.x > max_tx) max_tx = pt.x;
+        if (pt.y < min_ty) min_ty = pt.y;
+        if (pt.y > max_ty) max_ty = pt.y;
+        if (pt.z < min_tz) min_tz = pt.z;
+        if (pt.z > max_tz) max_tz = pt.z;
+      }
+      console.log(
+        'Toolpath extents:',
+        'x:', min_tx, 'to', max_tx,
+        'y:', min_ty, 'to', max_ty,
+        'z:', min_tz, 'to', max_tz
+      );
+    } else {
+      console.log('Toolpath is empty after generation!');
+    }
+
+    // 4. Simulate material removal after toolpath is generated (all in STL coordinates)
+    simulate_material_removal(stock, tool, toolpath_points_ref.current);
+
+    // 5. Assign to window.current_heightmap for visualization effect
+    window.current_heightmap = stock;
+
+    // 6. Force update by toggling show_stock or updating box_bounds
+    set_show_stock(false);
+    setTimeout(() => set_show_stock(true), 0)
+  }
+
+  function handle_generate() {
+    if (!stl_geometry || !box_bounds) return;
+    set_last_tool(tool);
+    run_simulation(stl_geometry, tool, box_bounds);
+  }
+
+  // handle_file_change: loads STL, generates heightmap, toolpath, simulates material removal, updates visualization
+  const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('handleFileChange called', event.target.files?.[0]);
+    const file = event.target.files?.[0];
+    if (!file || !scene_ref.current) return;
+
+    set_box_size(new THREE.Vector3(0, 0, 0));
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      const contents = e.target?.result;
+      if (!contents) return;
+
+      // Remove previous STL meshes and bounding boxes
+      scene_ref.current!.children
+        .filter(obj => obj.userData.is_stl || obj.userData.is_bounding_box || obj.userData.is_tool_path)
+        .forEach(obj => scene_ref.current!.remove(obj));
+
+      const loader = new STLLoader();
+      const geometry = loader.parse(contents as ArrayBuffer);
+      set_stl_geometry(geometry);
+      const material = new THREE.MeshNormalMaterial();
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.userData.is_stl = true;
+      scene_ref.current!.add(mesh);
+      mesh.visible = show_mesh;
+
+      // Compute and add bounding box helper
+      geometry.computeBoundingBox();
+      if (geometry.boundingBox) {
+        const box = new THREE.Box3().setFromObject(mesh);
+        run_simulation(geometry, tool, { min: box.min, max: box.max });
+        ;
+      }
+    };
+    reader.readAsArrayBuffer(file);
   };
-  reader.readAsArrayBuffer(file);
-};
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -541,7 +557,7 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
             style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
           >
             <label>
-              Cutter Diameter 
+              Cutter Diameter
               <input
                 type="number"
                 min="0.1"
@@ -608,6 +624,12 @@ const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
             </label>
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
+          <button
+            style={{ width: '100%', background: '#4caf50', color: '#fff', fontWeight: 'bold' }}
+            onClick={handle_generate}
+          >
+            Generate
+          </button>
         </div>
 
         {/* Visibility Section */}
