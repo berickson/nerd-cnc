@@ -456,6 +456,11 @@ const StartPage: React.FC = () => {
     };
     const heightmap = heightmap_from_mesh(geometry, grid);
 
+    // remove all existing toolpath lines from the scene
+    scene_ref.current!.children
+      .filter(obj => obj.userData.is_tool_path)
+      .forEach(obj => scene_ref.current!.remove(obj));
+
     // 1. Create a stock object from the heightmap bounds (STL coordinates)
     const stock_width = max_x - min_x;
     const stock_height = max_y - min_y;
