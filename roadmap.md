@@ -53,6 +53,7 @@
 
 - [x] Stock simulation (visualize material removal as toolpaths are executed)
   - [x] Use tool shape for material removal
+  - [ ] Stock can be defined with an stl file - useful for machining existing parts
 
 - [x] Tool shape selection (flat, ball, V-bit, etc.)
 - [x] Tool visualization in 3D view
