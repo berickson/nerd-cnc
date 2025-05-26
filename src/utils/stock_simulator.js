@@ -57,6 +57,44 @@ function simulate_material_removal(stock, tool, toolpath) {
 
   const r = tool.cutter_diameter / 2;
   const step = stock.grid_size;
+  const nx = Math.round(stock.width / stock.grid_size) + 1;
+  const ny = Math.round(stock.height / stock.grid_size) + 1;
+
+  // Precompute vbit angle math if needed
+  let v_angle_rad, tan_half_angle;
+  if (tool.type === 'vbit') {
+    v_angle_rad = (tool.v_angle * Math.PI) / 180;
+    tan_half_angle = Math.tan(v_angle_rad / 2);
+  }
+
+  // Precompute tool elevation grid for a single tool position at (0,0,0)
+  // Only needs to cover the tool's bounding box, not the entire stock
+  const tool_grid_radius = Math.ceil(r / step);
+  const tool_grid_size = tool_grid_radius * 2 + 1;
+  const tool_elevation_grid = [];
+  for (let ix = 0; ix < tool_grid_size; ix++) {
+    tool_elevation_grid[ix] = [];
+    for (let iy = 0; iy < tool_grid_size; iy++) {
+      const x = (ix - tool_grid_radius) * step;
+      const y = (iy - tool_grid_radius) * step;
+      const distance = Math.sqrt(x * x + y * y);
+      let dz = null;
+      if (distance > r + 1e-6) {
+        dz = null;
+      } else if (tool.type === 'flat') {
+        dz = 0;
+      } else if (tool.type === 'ball') {
+        dz = r - Math.sqrt(Math.max(0, r * r - distance * distance));
+      } else if (tool.type === 'vbit') {
+        if (tan_half_angle > 1e-8) {
+          dz = distance / tan_half_angle;
+        } else {
+          dz = null;
+        }
+      }
+      tool_elevation_grid[ix][iy] = dz;
+    }
+  }
 
   for (const pt of toolpath) {
     if (tool.type === 'flat' && tool.cutter_diameter <= step + 1e-6) {
@@ -66,32 +104,25 @@ function simulate_material_removal(stock, tool, toolpath) {
       }
       continue;
     }
-    // For all other cases, loop over all grid cells
-    const nx = Math.round(stock.width / stock.grid_size) + 1;
-    const ny = Math.round(stock.height / stock.grid_size) + 1;
-    for (let ix = 0; ix < nx; ix++) {
-      for (let iy = 0; iy < ny; iy++) {
-        // Compute world coordinates of cell center
-        const x = stock.origin_x + ix * stock.grid_size;
-        const y = stock.origin_y + iy * stock.grid_size;
-        const distance = Math.sqrt((x - pt.x) ** 2 + (y - pt.y) ** 2);
-        if (distance > r + 1e-6) continue;
-        let z;
-        if (tool.type === 'flat') {
-          z = pt.z;
-        } else if (tool.type === 'ball') {
-          z = pt.z + r - Math.sqrt(Math.max(0, r * r - distance * distance));
-        } else if (tool.type === 'vbit') {
-          const v_angle_rad = (tool.v_angle * Math.PI) / 180;
-          const tan_half_angle = Math.tan(v_angle_rad / 2);
-          if (tan_half_angle > 1e-8) {
-            z = pt.z + distance / tan_half_angle;
-          } else {
-            continue;
-          }
-        } else {
+    // Compute tool center in grid indices for this pt
+    const tool_cx = Math.round((pt.x - stock.origin_x) / step);
+    const tool_cy = Math.round((pt.y - stock.origin_y) / step);
+    for (let dx = -tool_grid_radius; dx <= tool_grid_radius; dx++) {
+      for (let dy = -tool_grid_radius; dy <= tool_grid_radius; dy++) {
+        const ix = tool_cx + dx;
+        const iy = tool_cy + dy;
+        if (
+          ix < 0 || iy < 0 || ix >= nx || iy >= ny
+        ) {
           continue;
         }
+        const grid_ix = dx + tool_grid_radius;
+        const grid_iy = dy + tool_grid_radius;
+        const dz = tool_elevation_grid[grid_ix][grid_iy];
+        if (dz === null) continue;
+        const x = stock.origin_x + ix * step;
+        const y = stock.origin_y + iy * step;
+        const z = pt.z + dz;
         if (stock.get_height(x, y) > z) {
           stock.set_height(x, y, z);
         }
@@ -243,15 +274,15 @@ function heightmap_to_solid_mesh(stock, min_z) {
     }
   });
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
+  const stock_geometry = new THREE.BufferGeometry();
+  stock_geometry.setAttribute(
     'position',
     new THREE.Float32BufferAttribute(positions, 3)
   );
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals(); // Normals will now be averaged at shared edges
+  stock_geometry.setIndex(indices);
+  stock_geometry.computeVertexNormals(); // Normals will now be averaged at shared edges
 
-  const material = new THREE.MeshPhongMaterial({
+  const stock_material = new THREE.MeshPhongMaterial({
     color: 0x229922,
     shininess: 80,
     specular: 0xdddddd,
@@ -259,7 +290,7 @@ function heightmap_to_solid_mesh(stock, min_z) {
     transparent: false
   });
 
-  return new THREE.Mesh(geometry, material);
+  return new THREE.Mesh(stock_geometry, stock_material);
 }
 module.exports = {
   create_heightmap_stock,
