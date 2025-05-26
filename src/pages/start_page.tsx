@@ -251,7 +251,7 @@ const StartPage: React.FC = () => {
         -Math.PI,                // thetaStart (start at bottom pole)
         Math.PI / 2              // thetaLength (only lower hemisphere)
       );
-      sphere_geom.translate(0, -cyl_height / 2 + tool.cutter_diameter/4, 0); // move hemisphere so its pole is at y=0
+      sphere_geom.translate(0, -cyl_height / 2 + tool.cutter_diameter / 4, 0); // move hemisphere so its pole is at y=0
       cutter_geometry = BufferGeometryUtils.mergeGeometries([
         cyl_geom,
         sphere_geom
@@ -273,7 +273,7 @@ const StartPage: React.FC = () => {
       // rotate 180 degrees around X to make the tip point down
       cone_geom.rotateX(Math.PI);
       // Move cone so tip is at y=0 (default is base at y=0)
-      cone_geom.translate(0, -(tool.length_of_cut/2 - height/2), 0);
+      cone_geom.translate(0, -(tool.length_of_cut / 2 - height / 2), 0);
       cutter_geometry = cone_geom;
 
       // the cones still should have a cutting edge, so we need to add a cylinder at the base
@@ -658,21 +658,21 @@ const StartPage: React.FC = () => {
               }}
               style={{ width: 80, marginLeft: 8 }}
             />
-            </label>
-            <label>
+          </label>
+          <label>
             Tool Step Over (% of Cutter Diameter)
             <input
               type="number"
               min={0.05}
               max={1.0}
-              step={0.01  }
+              step={0.01}
               value={step_over_percent}
               onChange={e => {
                 set_step_over_percent(Number(e.target.value));
                 set_simulation_dirty(true);
               }}
               style={{ width: 80, marginLeft: 8 }}
-            /> 
+            />
             <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
               (higher = smoother, slower)
             </span>

@@ -19,6 +19,7 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
     const ix = Math.round((x - origin_x) / grid_size);
     const iy = Math.round((y - origin_y) / grid_size);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
+    console.log(`Mapping world coordinates (${x}, ${y}) to grid indices (${ix}, ${iy})`);
     return heights[ix][iy];
   }
 
@@ -41,9 +42,13 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
   };
 }
 
-// Simulate material removal for a flat or ball endmill along a toolpath
-// tool: { cutter_diameter: number, type: string }
-// toolpath: array of { x, y, z }
+// Simulate material removal for a flat, ball, or vbit endmill along a toolpath
+// Assumptions:
+// - Tool zero position is the center of the tip (x, y, z)
+// - Only update grid cells if the new z is lower than the current height
+// - Flat: cuts a flat-bottomed cylinder at z=pt.z
+// - Ball: cuts a hemisphere, tip at z=pt.z, surface at z=pt.z + sqrt(r^2 - d^2) - r
+// - V-bit: cuts a cone, tip at z=pt.z, surface at z=pt.z + d / tan(v_angle/2)
 function simulate_material_removal(stock, tool, toolpath) {
   if (toolpath.length === 0) {
     console.log('Toolpath is empty, no material removal simulated.');
@@ -54,25 +59,41 @@ function simulate_material_removal(stock, tool, toolpath) {
   const step = stock.grid_size;
 
   for (const pt of toolpath) {
-    for (let dx = -r; dx <= r; dx += step) {
-      for (let dy = -r; dy <= r; dy += step) {
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        if (distance > r) continue;
-
-        const x = pt.x + dx;
-        const y = pt.y + dy;
-        let z = pt.z;
-
-        if (tool.type === 'ball') {
-          // Adjust Z for ball-nose curvature
-          const dz = Math.sqrt(Math.max(0, r * r - distance * distance));
-          z = Math.min(z, pt.z - dz); // Ensure the Z value is correctly adjusted
+    if (tool.type === 'flat' && tool.cutter_diameter <= step + 1e-6) {
+      // Special case: very thin flat endmill, only cut the center cell
+      if (stock.get_height(pt.x, pt.y) > pt.z) {
+        stock.set_height(pt.x, pt.y, pt.z);
+      }
+      continue;
+    }
+    // For all other cases, loop over all grid cells
+    const nx = Math.round(stock.width / stock.grid_size) + 1;
+    const ny = Math.round(stock.height / stock.grid_size) + 1;
+    for (let ix = 0; ix < nx; ix++) {
+      for (let iy = 0; iy < ny; iy++) {
+        // Compute world coordinates of cell center
+        const x = stock.origin_x + ix * stock.grid_size;
+        const y = stock.origin_y + iy * stock.grid_size;
+        const distance = Math.sqrt((x - pt.x) ** 2 + (y - pt.y) ** 2);
+        if (distance > r + 1e-6) continue;
+        let z;
+        if (tool.type === 'flat') {
+          z = pt.z;
+        } else if (tool.type === 'ball') {
+          z = pt.z + r - Math.sqrt(Math.max(0, r * r - distance * distance));
+        } else if (tool.type === 'vbit') {
+          const v_angle_rad = (tool.v_angle * Math.PI) / 180;
+          const tan_half_angle = Math.tan(v_angle_rad / 2);
+          if (tan_half_angle > 1e-8) {
+            z = pt.z + distance / tan_half_angle;
+          } else {
+            continue;
+          }
+        } else {
+          continue;
         }
-
-        // Update heightmap only if the calculated Z is lower than the current height
         if (stock.get_height(x, y) > z) {
           stock.set_height(x, y, z);
-          console.log(`Heightmap updated: x=${x}, y=${y}, z=${z}`);
         }
       }
     }
@@ -201,6 +222,26 @@ function heightmap_to_solid_mesh(stock, min_z) {
     // Note: This is the same pattern as Left face, but orientation of strip is different.
     indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
   }
+
+  // Debugging: Verify edge sharing
+  const edge_map = new Map();
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+    const edges = [
+      [a, b], [b, c], [c, a]
+    ];
+    edges.forEach(([v1, v2]) => {
+      const key = v1 < v2 ? `${v1},${v2}` : `${v2},${v1}`;
+      edge_map.set(key, (edge_map.get(key) || 0) + 1);
+    });
+  }
+
+  // Log edges shared by fewer or more than 2 faces
+  edge_map.forEach((count, edge) => {
+    if (count !== 2) {
+      console.warn(`Edge ${edge} is shared by ${count} faces (should be 2).`);
+    }
+  });
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
