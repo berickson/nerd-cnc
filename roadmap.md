@@ -32,6 +32,7 @@
   - [x] Basic G-code generation from toolpath
   - [x] UI button to export/download G-code file
   - [ ] User-settable feedrate, safe Z, and units
+  - [ ] Raster tool needs to left to safe depth and use go command before starting next scan line. Currently, the tool head is travelling through the material
   - [ ] G-code preview in UI
   - [ ] Support for multiple toolpaths/operations
   - [ ] Test with real-world toolpaths and G-code viewers
@@ -46,16 +47,15 @@
   - [ ] Direction of travel
   - [ ] Climb (down) or conventional (up) milling (see https://www.madearia.com/blog/climb-vs-conventional-milling/)
 
-- [ ] Tool definition (at minimum: diameter, type/shape)
-  - [ ] UI for selecting tool type and diameter
-  - [ ] Use tool definition in toolpath and simulation
+- [x] Tool definition (at minimum: diameter, type/shape)
+  - [x] UI for selecting tool type and diameter
+  - [x] Use tool definition in toolpath and simulation
 
-- [ ] Stock simulation (visualize material removal as toolpaths are executed)
-  - [ ] Use tool shape for material removal
-  - [ ] Visualize updated stock after each toolpath segment
+- [x] Stock simulation (visualize material removal as toolpaths are executed)
+  - [x] Use tool shape for material removal
 
-- [ ] Tool shape selection (flat, ball, V-bit, etc.)
-- [ ] Tool visualization in 3D view
+- [x] Tool shape selection (flat, ball, V-bit, etc.)
+- [x] Tool visualization in 3D view
 - [ ] Advanced G-code options (feeds, speeds, tool changes)
 - [ ] Adaptive paths to minimize errors - e.g., clearing uses large steps, and vertical and horizontal plans and step sizes adjust to geometry and tool
 - [ ] Export toolpath as CSV
@@ -78,6 +78,7 @@
 - [ ] UI for managing and displaying keepout/fixture items
 
 ## Bugs / Technical Debt
+
 - [ ] Ensure all grid cells are set for covering triangles
 - [ ] Handle degenerate/zero-area triangles robustly
 
