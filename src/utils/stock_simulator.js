@@ -19,7 +19,7 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
     const ix = Math.round((x - origin_x) / grid_size);
     const iy = Math.round((y - origin_y) / grid_size);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
-    console.log(`Mapping world coordinates (${x}, ${y}) to grid indices (${ix}, ${iy})`);
+    // console.log(`Mapping world coordinates (${x}, ${y}) to grid indices (${ix}, ${iy})`);
     return heights[ix][iy];
   }
 

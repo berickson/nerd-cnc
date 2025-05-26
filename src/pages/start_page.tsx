@@ -32,7 +32,7 @@ const StartPage: React.FC = () => {
 
   const mount_ref = useRef<HTMLDivElement>(null);
   const scene_ref = useRef<THREE.Scene>(null);
-  const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[]>([]);
+  const toolpath_points_ref = React.useRef<{ x: number; y: number; z: number }[][]>([]);
   const camera_ref = useRef<THREE.OrthographicCamera | null>(null);
   const controls_ref = useRef<OrbitControls | null>(null);
   const tool_mesh_ref = useRef<THREE.Group | null>(null);
@@ -223,7 +223,7 @@ const StartPage: React.FC = () => {
       );
       console.log('Tool effect: tool_position (outside top-front-left)', tool_position);
     } else {
-      console.log('Tool effect: using default tool position', tool_position);
+      console.log('Tool effect: using default tool_position', tool_position);
     }
 
     // Create a group for the tool
@@ -356,7 +356,8 @@ const StartPage: React.FC = () => {
 
 
   function handle_export_gcode() {
-    const gcode = generate_gcode(toolpath_points_ref.current);
+    if (!box_bounds) return
+    const gcode = generate_gcode(toolpath_points_ref.current, {safe_z: box_bounds.max.z + 5});
     const blob = new Blob([gcode], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -416,7 +417,6 @@ const StartPage: React.FC = () => {
 
   function run_simulation(geometry: THREE.BufferGeometry, tool: any, box_bounds: { min: THREE.Vector3, max: THREE.Vector3 }) {
     // Assumes geometry has boundingBox computed, tool is a flat object, box_bounds is {min, max}
-    // ...move your simulation and toolpath code here from handle_file_change...
     const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
     set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
     const linewidth = compute_linewidth(box);
@@ -471,7 +471,7 @@ const StartPage: React.FC = () => {
       min_y  // origin_y
     );
     // 2. Generate toolpath in STL coordinates
-    toolpath_points_ref.current = [];
+    toolpath_points_ref.current = []; // now an array of arrays
     let reverse = false;
     const points_per_line = 200;
     for (
@@ -489,9 +489,11 @@ const StartPage: React.FC = () => {
         const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
         const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
         line_points.push(new THREE.Vector3(x, y, z));
-        toolpath_points_ref.current.push({ x, y, z });
       }
       if (reverse) line_points.reverse();
+
+      // Store this tool operation (line) as an array of points
+      toolpath_points_ref.current.push(line_points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })));
 
       const positions = [];
       for (const pt of line_points) {
@@ -518,13 +520,15 @@ const StartPage: React.FC = () => {
       let min_tx = Infinity, max_tx = -Infinity;
       let min_ty = Infinity, max_ty = -Infinity;
       let min_tz = Infinity, max_tz = -Infinity;
-      for (const pt of toolpath_points_ref.current) {
-        if (pt.x < min_tx) min_tx = pt.x;
-        if (pt.x > max_tx) max_tx = pt.x;
-        if (pt.y < min_ty) min_ty = pt.y;
-        if (pt.y > max_ty) max_ty = pt.y;
-        if (pt.z < min_tz) min_tz = pt.z;
-        if (pt.z > max_tz) max_tz = pt.z;
+      for (const op of toolpath_points_ref.current) {
+        for (const pt of op) {
+          if (pt.x < min_tx) min_tx = pt.x;
+          if (pt.x > max_tx) max_tx = pt.x;
+          if (pt.y < min_ty) min_ty = pt.y;
+          if (pt.y > max_ty) max_ty = pt.y;
+          if (pt.z < min_tz) min_tz = pt.z;
+          if (pt.z > max_tz) max_tz = pt.z;
+        }
       }
       console.log(
         'Toolpath extents:',
@@ -537,7 +541,8 @@ const StartPage: React.FC = () => {
     }
 
     // 4. Simulate material removal after toolpath is generated (all in STL coordinates)
-    simulate_material_removal(stock, tool, toolpath_points_ref.current);
+    // Flatten all tool operations for simulation
+    simulate_material_removal(stock, tool, toolpath_points_ref.current.flat());
 
     // 5. Assign to window.current_heightmap for visualization effect
     window.current_heightmap = stock;
