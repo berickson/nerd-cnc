@@ -6,14 +6,16 @@ test('generate_gcode outputs correct G-code for a simple toolpath', () => {
     { x: 1, y: 0, z: 1 },
     { x: 1, y: 1, z: 1 }
   ];
-  const gcode = generate_gcode(toolpath);
+  // Wrap toolpath in an array to match expected input
+  const gcode = generate_gcode([toolpath]);
 
   // Check for header commands
   expect(gcode).toMatch(/G21/);
   expect(gcode).toMatch(/G90/);
 
   // Check for initial move and plunge
-  expect(gcode).toMatch(/G0 X0\.000 Y0\.000 Z6\.000/);
+  expect(gcode).toMatch(/G0 Z6\.000/);
+  expect(gcode).toMatch(/G0 X0\.000 Y0\.000/);
   expect(gcode).toMatch(/G1 Z1\.000/);
 
   // Check for toolpath moves

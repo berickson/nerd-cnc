@@ -267,12 +267,6 @@ function heightmap_to_solid_mesh(stock, min_z) {
     });
   }
 
-  // Log edges shared by fewer or more than 2 faces
-  edge_map.forEach((count, edge) => {
-    if (count !== 2) {
-      console.warn(`Edge ${edge} is shared by ${count} faces (should be 2).`);
-    }
-  });
 
   const stock_geometry = new THREE.BufferGeometry();
   stock_geometry.setAttribute(
