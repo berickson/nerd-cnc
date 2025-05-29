@@ -1,7 +1,7 @@
 # Project Roadmap & TODO
 
 ## Issues
-- [ ] Green material for stock is unappealing and doesn't pop out enough. The object stock material looks much better, but we need to be able to tell them apart.
+- [x] Green material for stock is unappealing and doesn't pop out enough. The object stock material looks much better, but we need to be able to tell them apart.
 - [ ] Material is removed discretely along toolpath, and not continuosly, makeing it look as if the tool is set down at individual points along the path instead of dragged along the path
 - [ ] Tools cut past mesh
 - [ ] When calculating toolpath, the shape of the tool needs to be considered against the shape of the patch it is trimming

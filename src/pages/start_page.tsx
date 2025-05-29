@@ -69,6 +69,9 @@ const StartPage: React.FC = () => {
   const [stock_update_counter, set_stock_update_counter] = useState(0);
   const [generate_timings, set_generate_timings] = React.useState<any>(null);
 
+  // Add state for carved result wireframe
+  const [show_stock_wireframe, set_show_stock_wireframe] = React.useState(false);
+
   //////////////////////////////////////////////////////////
   // effects
 
@@ -202,15 +205,31 @@ const StartPage: React.FC = () => {
     if (!scene_ref.current) return;
     scene_ref.current.children.forEach(obj => {
       if (obj.userData.is_stl && obj instanceof THREE.Mesh) {
-        if (show_wireframe) {
-          obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
+        if (!show_mesh) {
+          obj.visible = false;
         } else {
-          // Use a blue-tinted MeshPhongMaterial for STL mesh to distinguish from carved result
-          obj.material = new THREE.MeshPhongMaterial({ color: 0x2196f3, flatShading: true });
+          obj.visible = true;
+          if (show_wireframe) {
+            obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
+          } else {
+            obj.material = new THREE.MeshPhongMaterial({ color: 0x2196f3, flatShading: true });
+          }
+        }
+      }
+      if (obj.userData.is_stock_heightmap && obj instanceof THREE.Mesh) {
+        if (!show_stock) {
+          obj.visible = false;
+        } else {
+          obj.visible = true;
+          if (show_stock_wireframe) {
+            obj.material = new THREE.MeshBasicMaterial({ color: 0xff9800, wireframe: true });
+          } else {
+            obj.material = new THREE.MeshNormalMaterial({ flatShading: true });
+          }
         }
       }
     });
-  }, [show_wireframe, show_mesh]);
+  }, [show_mesh, show_wireframe, show_stock, show_stock_wireframe]);
 
   // update visibility of mesh, toolpath, and bounding box based on UI toggles
   useEffect(() => {
@@ -795,25 +814,37 @@ const StartPage: React.FC = () => {
         {/* Visibility Section */}
         <div>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
+          {/* Show/hide the original STL model, with option for wireframe */}
           <label style={{ display: 'block', marginBottom: 4 }}>
             <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
-            Show Mesh
+            Show STL Model
           </label>
+          {show_mesh && (
+            <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+              <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+              Show as Wireframe
+            </label>
+          )}
+          {/* Show/hide the carved result (simulated stock), with option for wireframe */}
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
+            Show Carved Result
+          </label>
+          {show_stock && (
+            <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+              <input type="checkbox" checked={show_stock_wireframe} onChange={e => set_show_stock_wireframe(e.target.checked)} />{' '}
+              Show as Wireframe
+            </label>
+          )}
+          {/* Show/hide the toolpath lines */}
           <label style={{ display: 'block', marginBottom: 4 }}>
             <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
             Show Toolpath
           </label>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
-            Show Stock
-          </label>
+          {/* Show/hide the bounding box */}
           <label style={{ display: 'block', marginBottom: 4 }}>
             <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
             Show Bounding Box
-          </label>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
-            Show Wireframe
           </label>
           {/* Bounding Box Info and Controls */}
           <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
