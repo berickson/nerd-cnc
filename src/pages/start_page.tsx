@@ -13,6 +13,7 @@ import '../global.css'
 declare global {
   interface Window {
     current_heightmap?: any;
+    last_simulation_timings?: any;
   }
 }
 /**
@@ -66,6 +67,7 @@ const StartPage: React.FC = () => {
   const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
   const [last_tool, set_last_tool] = React.useState(tool);
   const [stock_update_counter, set_stock_update_counter] = useState(0);
+  const [generate_timings, set_generate_timings] = React.useState<any>(null);
 
   //////////////////////////////////////////////////////////
   // effects
@@ -563,19 +565,20 @@ const StartPage: React.FC = () => {
     if (!stl_geometry || !box_bounds) return;
     set_generating(true); // Disable button instantly
     set_simulation_dirty(false); // Mark as not dirty
+    set_generate_timings(null);
 
     setTimeout(() => {
+      const timings: any = {};
+      let t0 = performance.now();
       set_last_tool(tool);
 
-      // Calculate grid cell size considering both X and Y dimensions
+      // 1. Tool/parameter validation
       const grid_cell_size_x = (box_bounds.max.x - box_bounds.min.x) / toolpath_grid_resolution;
       const grid_cell_size_y = (box_bounds.max.y - box_bounds.min.y) / toolpath_grid_resolution;
-      const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2; // Add 20% margin to ensure coverage
+      const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2;
+      timings.validation = performance.now() - t0;
+      t0 = performance.now();
 
-      // Debugging log for grid cell size and tool diameter
-      console.log('Grid cell size (X):', grid_cell_size_x, 'Grid cell size (Y):', grid_cell_size_y, 'Effective grid cell size with margin:', required_tool_size, 'Tool cutter diameter:', tool.cutter_diameter);
-
-      // Add a warning if the tool size is too small compared to the grid size
       if (tool.cutter_diameter <= required_tool_size) {
         set_tool_error(
           `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
@@ -586,7 +589,110 @@ const StartPage: React.FC = () => {
         set_tool_error(null);
       }
 
-      run_simulation(stl_geometry, tool, box_bounds);
+      // 2. Toolpath generation (heightmap, toolpath, lines)
+      const run_simulation_with_timing = (geometry: THREE.BufferGeometry, tool: any, box_bounds: { min: THREE.Vector3, max: THREE.Vector3 }) => {
+        let t1 = performance.now();
+        // ...existing code before heightmap...
+        const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
+        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+        const linewidth = compute_linewidth(box);
+        const boxHelper = new THREE.Box3Helper(box, 0xff0000);
+        boxHelper.userData.is_bounding_box = true;
+        scene_ref.current!.add(boxHelper);
+        boxHelper.visible = show_bounding_box;
+        const size = new THREE.Vector3();
+        box.getSize(size);
+        set_box_size(size);
+        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+        const step_over = tool.cutter_diameter * step_over_percent;
+        const min_x = box.min.x, max_x = box.max.x;
+        const min_y = box.min.y, max_y = box.max.y;
+        const max_z = box.max.z + 0.010;
+        const grid = {
+          min_x: min_x,
+          max_x: max_x,
+          min_y: min_y,
+          max_y: max_y,
+          res_x: toolpath_grid_resolution,
+          res_y: toolpath_grid_resolution,
+        };
+        const heightmap_start = performance.now();
+        const heightmap = heightmap_from_mesh(geometry, grid);
+        timings.heightmap = performance.now() - heightmap_start;
+        // ...existing code for toolpath...
+        scene_ref.current!.children
+          .filter(obj => obj.userData.is_tool_path)
+          .forEach(obj => scene_ref.current!.remove(obj));
+        const stock_width = max_x - min_x;
+        const stock_height = max_y - min_y;
+        const stock_grid_size = stock_width / grid.res_x;
+        const stock_initial_height = box.max.z;
+        const stock = create_heightmap_stock(
+          stock_width,
+          stock_height,
+          stock_grid_size,
+          stock_initial_height,
+          min_x,
+          min_y
+        );
+        toolpath_points_ref.current = [];
+        let reverse = false;
+        const points_per_line = 200;
+        const toolpath_start = performance.now();
+        for (
+          let y_idx = 0;
+          y_idx < grid.res_y;
+          y_idx += Math.max(1, Math.round(step_over / ((max_y - min_y) / grid.res_y)))
+        ) {
+          const y = min_y + (max_y - min_y) * (y_idx / grid.res_y);
+          const line_points: THREE.Vector3[] = [];
+          for (
+            let x_idx = 0;
+            x_idx < grid.res_x;
+            x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
+          ) {
+            const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
+            const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
+            line_points.push(new THREE.Vector3(x, y, z));
+          }
+          if (reverse) line_points.reverse();
+          toolpath_points_ref.current.push(line_points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })));
+          const positions = [];
+          for (const pt of line_points) {
+            positions.push(pt.x, pt.y, pt.z);
+          }
+          const line_geometry = new LineGeometry();
+          line_geometry.setPositions(positions);
+          const line_material = new LineMaterial({
+            color: 0x00ff00,
+            linewidth: linewidth,
+            alphaToCoverage: true
+          });
+          line_material.resolution.set(window.innerWidth, window.innerHeight);
+          const line = new Line2(line_geometry, line_material);
+          line.computeLineDistances();
+          line.userData.is_tool_path = true;
+          scene_ref.current!.add(line);
+          line.visible = show_toolpath
+          reverse = !reverse;
+        }
+        timings.toolpath = performance.now() - toolpath_start;
+        // ...existing code for toolpath extents...
+        // 3. Material removal simulation
+        const sim_start = performance.now();
+        simulate_material_removal(stock, tool, toolpath_points_ref.current.flat());
+        timings.simulation = performance.now() - sim_start;
+        // 4. Stock mesh update/visualization
+        const mesh_start = performance.now();
+        window.current_heightmap = stock;
+        set_stock_update_counter((c: number) => c + 1);
+        set_show_stock(false);
+        setTimeout(() => set_show_stock(true), 0);
+        timings.mesh_update = performance.now() - mesh_start;
+      };
+
+      run_simulation_with_timing(stl_geometry, tool, box_bounds);
+      set_generate_timings(timings);
       set_generating(false);
     }, 0);
   }
@@ -784,6 +890,26 @@ const StartPage: React.FC = () => {
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
           <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
+          {generate_timings && (
+            <div style={{ marginTop: 8, color: '#aaa', fontSize: '0.95em' }}>
+              <div><strong>Timing (ms):</strong></div>
+              <div>Validation: {generate_timings.validation?.toFixed(1)}</div>
+              <div>Heightmap: {generate_timings.heightmap?.toFixed(1)}</div>
+              <div>Toolpath: {generate_timings.toolpath?.toFixed(1)}</div>
+              <div>Simulation: {generate_timings.simulation?.toFixed(1)}</div>
+              <div>Mesh update: {generate_timings.mesh_update?.toFixed(1)}</div>
+            </div>
+          )}
+          {/* If window.last_simulation_timings is set, show it below the main timings */}
+          {typeof window !== 'undefined' && window.last_simulation_timings && (
+            <div style={{ marginTop: 4, color: '#aaa', fontSize: '0.9em' }}>
+              <div><strong>Simulation details:</strong></div>
+              <div>Tool grid: {window.last_simulation_timings.tool_grid?.toFixed(1)} ms</div>
+              <div>Toolpath loop: {window.last_simulation_timings.toolpath_loop?.toFixed(1)} ms</div>
+              <div>Grid updates: {window.last_simulation_timings.grid_updates}</div>
+              <div>Total (JS only): {window.last_simulation_timings.total?.toFixed(1)} ms</div>
+            </div>
+          )}
         </div>
         {/* Visibility Section */}
         <div>

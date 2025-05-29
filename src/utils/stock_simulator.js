@@ -49,11 +49,14 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
 // - Flat: cuts a flat-bottomed cylinder at z=pt.z
 // - Ball: cuts a hemisphere, tip at z=pt.z, surface at z=pt.z + sqrt(r^2 - d^2) - r
 // - V-bit: cuts a cone, tip at z=pt.z, surface at z=pt.z + d / tan(v_angle/2)
-function simulate_material_removal(stock, tool, toolpath) {
+function old__see_rust_version_simulate_material_removal(stock, tool, toolpath) {
   if (toolpath.length === 0) {
     console.log('Toolpath is empty, no material removal simulated.');
     return;
   }
+
+  const timings = {};
+  const t_start = performance.now();
 
   const r = tool.cutter_diameter / 2;
   const step = stock.grid_size;
@@ -67,8 +70,8 @@ function simulate_material_removal(stock, tool, toolpath) {
     tan_half_angle = Math.tan(v_angle_rad / 2);
   }
 
-  // Precompute tool elevation grid for a single tool position at (0,0,0)
-  // Only needs to cover the tool's bounding box, not the entire stock
+  // 1. Precompute tool elevation grid
+  const t_grid_start = performance.now();
   const tool_grid_radius = Math.ceil(r / step);
   const tool_grid_size = tool_grid_radius * 2 + 1;
   const tool_elevation_grid = [];
@@ -95,12 +98,17 @@ function simulate_material_removal(stock, tool, toolpath) {
       tool_elevation_grid[ix][iy] = dz;
     }
   }
+  timings.tool_grid = performance.now() - t_grid_start;
 
+  // 2. Main toolpath loop
+  const t_toolpath_start = performance.now();
+  let update_count = 0;
   for (const pt of toolpath) {
     if (tool.type === 'flat' && tool.cutter_diameter <= step + 1e-6) {
       // Special case: very thin flat endmill, only cut the center cell
       if (stock.get_height(pt.x, pt.y) > pt.z) {
         stock.set_height(pt.x, pt.y, pt.z);
+        update_count++;
       }
       continue;
     }
@@ -125,10 +133,19 @@ function simulate_material_removal(stock, tool, toolpath) {
         const z = pt.z + dz;
         if (stock.get_height(x, y) > z) {
           stock.set_height(x, y, z);
+          update_count++;
         }
       }
     }
   }
+  timings.toolpath_loop = performance.now() - t_toolpath_start;
+  timings.total = performance.now() - t_start;
+  timings.grid_updates = update_count;
+  if (typeof window !== 'undefined') {
+    window.last_simulation_timings = timings;
+  }
+  // Optionally log timings for profiling
+  console.log('[simulate_material_removal] timings:', timings);
 }
 
 
@@ -286,8 +303,101 @@ function heightmap_to_solid_mesh(stock, min_z) {
 
   return new THREE.Mesh(stock_geometry, stock_material);
 }
+
+// WASM kernel import and async init
+let wasm_mod = null;
+let wasm_ready = false;
+(async () => {
+  try {
+    wasm_mod = await import('../../wasm_kernel/pkg/wasm_kernel.js');
+    if (wasm_mod && wasm_mod.default) {
+      await wasm_mod.default(); // ensure WASM is initialized
+    }
+    wasm_ready = true;
+    console.log('[stock_simulator] WASM kernel loaded');
+  } catch (e) {
+    console.warn('[stock_simulator] Failed to load WASM kernel, falling back to JS:', e);
+    wasm_mod = null;
+    wasm_ready = false;
+  }
+})();
+
+// WASM-backed simulation wrapper
+function simulate_material_removal(stock, tool, toolpath) {
+  // Use WASM if available and ready
+  if (wasm_mod && wasm_ready && wasm_mod.simulate_material_removal_wasm) {
+    try {
+      // Convert stock heights to Float32Array if needed
+      let heightmap = stock.heightmap;
+      if (!heightmap) {
+        // Convert 2D array to flat Float32Array (row-major)
+        const nx = Math.round(stock.width / stock.grid_size) + 1;
+        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        heightmap = new Float32Array(nx * ny);
+        for (let ix = 0; ix < nx; ix++) {
+          for (let iy = 0; iy < ny; iy++) {
+            heightmap[ix * ny + iy] = stock.get_height(
+              stock.origin_x + ix * stock.grid_size,
+              stock.origin_y + iy * stock.grid_size
+            );
+          }
+        }
+        stock.heightmap = heightmap;
+      }
+      // Prepare toolpath as flat Float32Array
+      let flat_toolpath;
+      if (Array.isArray(toolpath) && toolpath.length > 0 && typeof toolpath[0] === 'object') {
+        flat_toolpath = new Float32Array(toolpath.length * 3);
+        for (let i = 0; i < toolpath.length; i++) {
+          flat_toolpath[i * 3 + 0] = toolpath[i].x;
+          flat_toolpath[i * 3 + 1] = toolpath[i].y;
+          flat_toolpath[i * 3 + 2] = toolpath[i].z;
+        }
+      } else if (toolpath instanceof Float32Array) {
+        flat_toolpath = toolpath;
+      } else {
+        flat_toolpath = new Float32Array(toolpath);
+      }
+      wasm_mod.simulate_material_removal_wasm(
+        heightmap,
+        Math.round(stock.width / stock.grid_size) + 1,
+        Math.round(stock.height / stock.grid_size) + 1,
+        stock.grid_size,
+        stock.origin_x,
+        stock.origin_y,
+        tool.type,
+        tool.cutter_diameter,
+        tool.v_angle || 0,
+        flat_toolpath
+      );
+      // WASM mutates heightmap in-place; update stock.get_height/set_height if needed
+      stock.get_height = function(x, y) {
+        const ix = Math.round((x - stock.origin_x) / stock.grid_size);
+        const iy = Math.round((y - stock.origin_y) / stock.grid_size);
+        const nx = Math.round(stock.width / stock.grid_size) + 1;
+        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
+        return heightmap[ix * ny + iy];
+      };
+      stock.set_height = function(x, y, z) {
+        const ix = Math.round((x - stock.origin_x) / stock.grid_size);
+        const iy = Math.round((y - stock.origin_y) / stock.grid_size);
+        const nx = Math.round(stock.width / stock.grid_size) + 1;
+        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return;
+        heightmap[ix * ny + iy] = z;
+      };
+      return;
+    } catch (e) {
+      console.warn('[stock_simulator] WASM simulation failed, falling back to JS:', e);
+    }
+  }
+  // Fallback: use JS version
+  old__see_rust_version_simulate_material_removal(stock, tool, toolpath);
+}
+
 module.exports = {
   create_heightmap_stock,
-  simulate_material_removal,
-  heightmap_to_solid_mesh
+  heightmap_to_solid_mesh,
+  simulate_material_removal
 };
