@@ -314,3 +314,104 @@ describe('simulate_material_removal', () => {
     }
   });
 });
+
+describe('simulate_material_removal (wasm)', () => {
+  let wasm;
+  let simulate_material_removal_wasm;
+  let create_heightmap_stock;
+
+  beforeAll(async () => {
+    wasm = await import('../../wasm_kernel/pkg/wasm_kernel.js');
+    create_heightmap_stock = (width, height, grid_size, initial_height, origin_x = 0, origin_y = 0) => {
+      const nx = Math.round(width / grid_size);
+      const ny = Math.round(height / grid_size);
+      const heightmap = new Float32Array(nx * ny).fill(initial_height);
+      return {
+        width,
+        height,
+        grid_size,
+        nx,
+        ny,
+        origin_x,
+        origin_y,
+        heightmap,
+        get_height(x, y) {
+          const ix = Math.round((x - origin_x) / grid_size);
+          const iy = Math.round((y - origin_y) / grid_size);
+          if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return undefined;
+          return heightmap[ix * ny + iy];
+        },
+        set_height(x, y, h) {
+          const ix = Math.round((x - origin_x) / grid_size);
+          const iy = Math.round((y - origin_y) / grid_size);
+          if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return;
+          heightmap[ix * ny + iy] = h;
+        }
+      };
+    };
+    simulate_material_removal_wasm = (stock, tool, toolpath) => {
+      const flat_toolpath = new Float32Array(toolpath.length * 3);
+      for (let i = 0; i < toolpath.length; i++) {
+        flat_toolpath[i * 3 + 0] = toolpath[i].x;
+        flat_toolpath[i * 3 + 1] = toolpath[i].y;
+        flat_toolpath[i * 3 + 2] = toolpath[i].z;
+      }
+      const new_heightmap = wasm.simulate_material_removal_wasm(
+        stock.heightmap,
+        stock.nx,
+        stock.ny,
+        stock.grid_size,
+        stock.origin_x,
+        stock.origin_y,
+        tool.type,
+        tool.cutter_diameter,
+        tool.v_angle || 0,
+        flat_toolpath
+      );
+      stock.heightmap.set(new_heightmap);
+    };
+  });
+
+  it('thin flat endmill only cuts center cell', () => {
+    const stock = create_heightmap_stock(5, 5, 1, 5);
+    const tool = { cutter_diameter: 1, type: 'flat' };
+    simulate_material_removal_wasm(stock, tool, [{ x: 2, y: 2, z: 2 }]);
+    expect(stock.get_height(2, 2)).toBeCloseTo(2);
+    expect(stock.get_height(1, 2)).toBeCloseTo(5);
+    expect(stock.get_height(2, 1)).toBeCloseTo(5);
+    expect(stock.get_height(3, 2)).toBeCloseTo(5);
+    expect(stock.get_height(2, 3)).toBeCloseTo(5);
+  });
+
+  it('moderate flat endmill only cuts within circular area', () => {
+    const stock = create_heightmap_stock(5, 5, 1, 5);
+    const tool = { cutter_diameter: 3, type: 'flat' };
+    simulate_material_removal_wasm(stock, tool, [{ x: 2, y: 2, z: 2 }]);
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 5; y++) {
+        const dist = Math.sqrt((x - 2) ** 2 + (y - 2) ** 2);
+        if (dist <= 1.5 + 1e-6) {
+          expect(stock.get_height(x, y)).toBeCloseTo(2);
+        } else {
+          expect(stock.get_height(x, y)).toBeCloseTo(5);
+        }
+      }
+    }
+  });
+
+  it('minimal 1x1 heightmap, single toolpath point (WASM)', () => {
+    // Minimal test: 1x1 grid, 1 toolpath point
+    const stock = create_heightmap_stock(1, 1, 1, 5);
+    const tool = { cutter_diameter: 1, type: 'flat' };
+    const toolpath = [{ x: 0, y: 0, z: 2 }];
+    // Defensive: log before/after for debugging
+    const before = stock.heightmap.slice();
+    expect(before.length).toBe(1);
+    simulate_material_removal_wasm(stock, tool, toolpath);
+    const after = stock.heightmap.slice();
+    console.log('WASM minimal test before:', Array.from(before));
+    console.log('WASM minimal test after:', Array.from(after));
+    // The only cell should be cut to z=2
+    expect(stock.get_height(0, 0)).toBeCloseTo(2);
+  });
+});

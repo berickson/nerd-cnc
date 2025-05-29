@@ -8,3 +8,4 @@
 - add unit tests before code where applicable, ui tests are not needed
 - document plans in roadmap.md
 - if you modify code, you should also run the unit tests to ensure nothing is broken
+- instead of askgin user to edit code or run terminal commands, do it yourself. If questionable, ask user to confirm first.
