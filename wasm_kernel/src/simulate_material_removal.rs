@@ -14,7 +14,7 @@
 // - V-bit: cuts a cone, tip at z=pt.z, surface at z=pt.z + d / tan(v_angle/2)
 
 pub struct SimulateMaterialRemovalParams<'a> {
-  pub heightmap: &'a [f32], // input only, not mutable
+  pub heightmap: &'a mut [f32],
   pub nx: usize,
   pub ny: usize,
   pub grid_size: f32,
@@ -26,9 +26,98 @@ pub struct SimulateMaterialRemovalParams<'a> {
   pub toolpath: &'a [f32], // flat array: x0, y0, z0, x1, y1, z1, ...
 }
 
-pub fn simulate_material_removal(_params: SimulateMaterialRemovalParams) {
-  // No-op: do nothing, just return immediately
-  return;
+pub fn simulate_material_removal(params: SimulateMaterialRemovalParams) {
+  let SimulateMaterialRemovalParams {
+    heightmap,
+    nx,
+    ny,
+    grid_size,
+    origin_x,
+    origin_y,
+    tool_type,
+    cutter_diameter,
+    v_angle_deg,
+    toolpath,
+  } = params;
+  let r = cutter_diameter / 2.0;
+  let step = grid_size;
+  let tool_grid_radius = (r / step).ceil() as isize;
+  let tool_grid_size = tool_grid_radius * 2 + 1;
+  let tan_half_angle = if tool_type == "vbit" {
+    let v_angle_rad = v_angle_deg * std::f32::consts::PI / 180.0;
+    (v_angle_rad / 2.0).tan()
+  } else {
+    0.0
+  };
+
+  // Precompute tool elevation grid for a single tool position at (0,0,0)
+  let mut tool_elevation_grid = vec![vec![None; tool_grid_size as usize]; tool_grid_size as usize];
+  for ix in 0..tool_grid_size {
+    for iy in 0..tool_grid_size {
+      let x = (ix - tool_grid_radius) as f32 * step;
+      let y = (iy - tool_grid_radius) as f32 * step;
+      let distance = (x * x + y * y).sqrt();
+      let dz = if distance > r + 1e-6 {
+        None
+      } else if tool_type == "flat" {
+        Some(0.0)
+      } else if tool_type == "ball" {
+        Some(r - (r * r - distance * distance).max(0.0).sqrt())
+      } else if tool_type == "vbit" {
+        if tan_half_angle > 1e-8 {
+          Some(distance / tan_half_angle)
+        } else {
+          None
+        }
+      } else {
+        None
+      };
+      tool_elevation_grid[ix as usize][iy as usize] = dz;
+    }
+  }
+
+  for pt in toolpath.chunks(3) {
+    assert!(pt.len() == 3, "toolpath chunk is not length 3");
+    let x0 = pt[0];
+    let y0 = pt[1];
+    let z0 = pt[2];
+    if tool_type == "flat" && cutter_diameter <= step + 1e-6 {
+      // Only cut the center cell
+      let ix = ((x0 - origin_x) / step).round() as isize;
+      let iy = ((y0 - origin_y) / step).round() as isize;
+      if ix >= 0 && iy >= 0 && (ix as usize) < nx && (iy as usize) < ny {
+        let idx = ix as usize * ny + iy as usize;
+        if heightmap[idx] > z0 {
+          heightmap[idx] = z0;
+        }
+      }
+      continue;
+    }
+    let tool_cx = ((x0 - origin_x) / step).round() as isize;
+    let tool_cy = ((y0 - origin_y) / step).round() as isize;
+    for dx in -tool_grid_radius..=tool_grid_radius {
+      for dy in -tool_grid_radius..=tool_grid_radius {
+        let ix = tool_cx + dx;
+        let iy = tool_cy + dy;
+        if ix < 0 || iy < 0 || (ix as usize) >= nx || (iy as usize) >= ny {
+          continue;
+        }
+        let grid_ix = (dx + tool_grid_radius) as usize;
+        let grid_iy = (dy + tool_grid_radius) as usize;
+        assert!(grid_ix < tool_elevation_grid.len(), "grid_ix {} out of bounds {}", grid_ix, tool_elevation_grid.len());
+        assert!(grid_iy < tool_elevation_grid[grid_ix].len(), "grid_iy {} out of bounds {}", grid_iy, tool_elevation_grid[grid_ix].len());
+        if let Some(dz) = tool_elevation_grid[grid_ix][grid_iy] {
+          let z = z0 + dz;
+          let idx = ix as usize * ny + iy as usize;
+          // Defensive: check idx is in bounds
+          assert!(idx < heightmap.len(), "heightmap idx {} out of bounds {}", idx, heightmap.len());
+          if heightmap[idx] > z {
+            heightmap[idx] = z;
+          }
+        }
+      }
+    }
+  }
 }
 
 // Unit test for simulate_material_removal
@@ -44,7 +133,7 @@ mod tests {
     let mut heightmap = vec![5.0; nx * ny];
     let toolpath = vec![2.0, 2.0, 2.0]; // single point
     simulate_material_removal(SimulateMaterialRemovalParams {
-      heightmap: &heightmap, // remove mut
+      heightmap: &mut heightmap, // remove mut
       nx,
       ny,
       grid_size: 1.0,
@@ -67,7 +156,7 @@ mod tests {
     let toolpath = vec![250.0, 250.0, 10.0]; // single point in center
     let start = Instant::now();
     simulate_material_removal(SimulateMaterialRemovalParams {
-      heightmap: &heightmap, // remove mut
+      heightmap: &mut heightmap, // remove mut
       nx,
       ny,
       grid_size: 1.0,
@@ -119,10 +208,10 @@ pub fn simulate_material_removal_wasm(
     panic!("toolpath length {} is not a multiple of 3", toolpath_js.length());
   }
   // Copy JS arrays into Rust Vecs
-  let heightmap: Vec<f32> = heightmap_js.to_vec();
+  let mut heightmap: Vec<f32> = heightmap_js.to_vec();
   let toolpath: Vec<f32> = toolpath_js.to_vec();
   simulate_material_removal(SimulateMaterialRemovalParams {
-    heightmap: &heightmap,
+    heightmap: &mut heightmap,
     nx,
     ny,
     grid_size,
@@ -133,5 +222,11 @@ pub fn simulate_material_removal_wasm(
     v_angle_deg,
     toolpath: &toolpath,
   });
-  // No return value, no mutation
+  // Write back to JS array
+  for (i, v) in heightmap.iter().enumerate() {
+    // Defensive: check bounds
+    if i < heightmap_js.length() as usize {
+      heightmap_js.set_index(i as u32, *v);
+    }
+  }
 }
