@@ -2,22 +2,23 @@
 // All units are mm unless otherwise noted
 
 // Create a heightmap stock object
-// width, height: mm, grid_size: mm, initial_height: mm
+// width, height: mm, grid_cells_x: int, grid_cells_y: int, initial_height: mm
 // origin_x, origin_y: world coordinates of the lower-left corner (default 0,0)
-function create_heightmap_stock(width, height, grid_size, initial_height, origin_x = 0, origin_y = 0) {
-  // Ensure grid includes both origin and far corner
-  // Assumption: width/height are the full extents, so we need (max - min) / grid_size + 1 cells
-  const nx = Math.round(width / grid_size) + 1;
-  const ny = Math.round(height / grid_size) + 1;
+function create_heightmap_stock(width, height, grid_cells_x, grid_cells_y, initial_height, origin_x = 0, origin_y = 0) {
+  // grid_cells_x/y are the number of grid points (not spacing)
+  const nx = grid_cells_x;
+  const ny = grid_cells_y;
+  const grid_size_x = width / (nx - 1);
+  const grid_size_y = height / (ny - 1);
   const heights = Array.from({ length: nx }, () =>
     Array.from({ length: ny }, () => initial_height)
   );
 
   // Get the height at world (x, y)
   function get_height(x, y) {
-    // Map world x/y to grid indices using origin
-    const ix = Math.round((x - origin_x) / grid_size);
-    const iy = Math.round((y - origin_y) / grid_size);
+    // Map world x/y to grid indices using origin and per-axis spacing
+    const ix = Math.round((x - origin_x) / grid_size_x);
+    const iy = Math.round((y - origin_y) / grid_size_y);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
     // console.log(`Mapping world coordinates (${x}, ${y}) to grid indices (${ix}, ${iy})`);
     return heights[ix][iy];
@@ -25,8 +26,8 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
 
   // Set the height at world (x, y)
   function set_height(x, y, z) {
-    const ix = Math.round((x - origin_x) / grid_size);
-    const iy = Math.round((y - origin_y) / grid_size);
+    const ix = Math.round((x - origin_x) / grid_size_x);
+    const iy = Math.round((y - origin_y) / grid_size_y);
     if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return;
     heights[ix][iy] = z;
   }
@@ -36,7 +37,10 @@ function create_heightmap_stock(width, height, grid_size, initial_height, origin
     set_height,
     width,
     height,
-    grid_size,
+    grid_cells_x: nx,
+    grid_cells_y: ny,
+    grid_size_x,
+    grid_size_y,
     origin_x,
     origin_y
   };
@@ -59,9 +63,9 @@ function old__see_rust_version_simulate_material_removal(stock, tool, toolpath) 
   const t_start = performance.now();
 
   const r = tool.cutter_diameter / 2;
-  const step = stock.grid_size;
-  const nx = Math.round(stock.width / stock.grid_size) + 1;
-  const ny = Math.round(stock.height / stock.grid_size) + 1;
+  const step = stock.grid_size_x;
+  const nx = Math.round(stock.width / stock.grid_size_x) + 1;
+  const ny = Math.round(stock.height / stock.grid_size_y) + 1;
 
   // Precompute vbit angle math if needed
   let v_angle_rad, tan_half_angle;
@@ -154,28 +158,42 @@ function old__see_rust_version_simulate_material_removal(stock, tool, toolpath) 
 // min_z: number, the z value for the bottom of the solid.
 function heightmap_to_solid_mesh(stock, min_z) {
   const THREE = require('three');
-  const nx = Math.round(stock.width / stock.grid_size); // number of cells in x
-  const ny = Math.round(stock.height / stock.grid_size); // number of cells in y
+  // Use grid_cells_x/y and grid_size_x/y for clarity
+  const nx = stock.grid_cells_x;
+  const ny = stock.grid_cells_y;
+  const grid_size_x = stock.grid_size_x;
+  const grid_size_y = stock.grid_size_y;
+  // Cap maximum allowed vertices/faces to avoid JS array overflow
+  const max_vertices = 50_000_000;
+  const max_faces = 160_000_000;
+  const num_top_vertices = nx * ny;
+  const num_total_vertices = num_top_vertices * 3; // top, bottom, duplicated top
+  if (num_total_vertices > max_vertices) {
+    throw new Error(`heightmap_to_solid_mesh: grid too fine, would create ${num_total_vertices} vertices (limit ${max_vertices}). Reduce grid resolution.`);
+  }
+  // Estimate faces: each cell = 12 triangles (top+bottom+4 sides)
+  const num_faces = (nx - 1) * (ny - 1) * 12;
+  if (num_faces > max_faces) {
+    throw new Error(`heightmap_to_solid_mesh: grid too fine, would create ${num_faces} faces (limit ${max_faces}). Reduce grid resolution.`);
+  }
   const positions = [];
   const indices = [];
 
   // Generate top vertices (z from heightmap)
-  for (let ix = 0; ix <= nx; ix++) {
-    for (let iy = 0; iy <= ny; iy++) {
-      const x = stock.origin_x + ix * stock.grid_size;
-      const y = stock.origin_y + iy * stock.grid_size;
+  for (let ix = 0; ix < nx; ix++) {
+    for (let iy = 0; iy < ny; iy++) {
+      const x = stock.origin_x + ix * grid_size_x;
+      const y = stock.origin_y + iy * grid_size_y;
       const z = stock.get_height(x, y);
       positions.push(x, y, z);
     }
   }
 
   // Generate bottom vertices (z = min_z)
-  // num_top_vertices is the count of vertices in the top plane
-  const num_top_vertices = (nx + 1) * (ny + 1);
-  for (let ix = 0; ix <= nx; ix++) {
-    for (let iy = 0; iy <= ny; iy++) {
-      const x = stock.origin_x + ix * stock.grid_size;
-      const y = stock.origin_y + iy * stock.grid_size;
+  for (let ix = 0; ix < nx; ix++) {
+    for (let iy = 0; iy < ny; iy++) {
+      const x = stock.origin_x + ix * grid_size_x;
+      const y = stock.origin_y + iy * grid_size_y;
       positions.push(x, y, min_z);
     }
   }
@@ -184,13 +202,12 @@ function heightmap_to_solid_mesh(stock, min_z) {
   // top: true for top plane, false for bottom plane
   // Vertex indexing: top plane vertices come first, then bottom plane vertices.
   function idx(ix, iy, top) {
-    // (ny + 1) is the number of vertices along the y-axis for a given ix
-    return (top ? 0 : num_top_vertices) + ix * (ny + 1) + iy;
+    return (top ? 0 : num_top_vertices) + ix * ny + iy;
   }
 
   // Top and bottom faces
-  for (let ix = 0; ix < nx; ix++) {
-    for (let iy = 0; iy < ny; iy++) {
+  for (let ix = 0; ix < nx - 1; ix++) {
+    for (let iy = 0; iy < ny - 1; iy++) {
       // Top face (upward normals)
       const a = idx(ix, iy, true);
       const b = idx(ix + 1, iy, true);
@@ -208,82 +225,50 @@ function heightmap_to_solid_mesh(stock, min_z) {
   }
 
   // Duplicate top vertices for use in side faces to get sharp normals
-  // num_top_vertices is already (nx + 1) * (ny + 1)
-  const side_top_offset = positions.length / 3; // Marks the start of duplicated top vertices
-                                              // positions array currently holds original top + original bottom vertices
-
+  const side_top_offset = positions.length / 3;
   for (let i = 0; i < num_top_vertices; i++) {
-    // Original top vertices are at indices 0 to num_top_vertices - 1
-    // Push a copy of each original top vertex
     positions.push(
-      positions[i * 3 + 0], // x
-      positions[i * 3 + 1], // y
-      positions[i * 3 + 2]  // z
+      positions[i * 3 + 0],
+      positions[i * 3 + 1],
+      positions[i * 3 + 2]
     );
   }
 
   // Side faces:
   // Use duplicated top vertices (offset by side_top_offset) and original bottom vertices.
 
-  // Left edge (face at ix = 0, normal should be -X)
-  // Strip runs along Y: top_a is (0, iy), top_b is (0, iy+1)
-  for (let iy = 0; iy < ny; iy++) {
-    const top_a = side_top_offset + idx(0, iy, true); // Duplicated top vertex
-    const top_b = side_top_offset + idx(0, iy + 1, true); // Duplicated top vertex
-    const bot_a = idx(0, iy, false); // Bottom vertex
-    const bot_b = idx(0, iy + 1, false); // Bottom vertex
-    // Winding for -X normal: (top_a, top_b, bot_a), (bot_a, top_b, bot_b)
+  // Left edge (ix = 0)
+  for (let iy = 0; iy < ny - 1; iy++) {
+    const top_a = side_top_offset + idx(0, iy, true);
+    const top_b = side_top_offset + idx(0, iy + 1, true);
+    const bot_a = idx(0, iy, false);
+    const bot_b = idx(0, iy + 1, false);
     indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
   }
-
-  // Right edge (face at ix = nx, normal should be +X)
-  // Strip runs along Y: top_a is (nx, iy), top_b is (nx, iy+1)
-  for (let iy = 0; iy < ny; iy++) {
-    const top_a = side_top_offset + idx(nx, iy, true);
-    const top_b = side_top_offset + idx(nx, iy + 1, true);
-    const bot_a = idx(nx, iy, false);
-    const bot_b = idx(nx, iy + 1, false);
-    // Winding for +X normal: (top_a, bot_a, top_b), (top_b, bot_a, bot_b)
+  // Right edge (ix = nx-1)
+  for (let iy = 0; iy < ny - 1; iy++) {
+    const top_a = side_top_offset + idx(nx - 1, iy, true);
+    const top_b = side_top_offset + idx(nx - 1, iy + 1, true);
+    const bot_a = idx(nx - 1, iy, false);
+    const bot_b = idx(nx - 1, iy + 1, false);
     indices.push(top_a, bot_a, top_b, top_b, bot_a, bot_b);
   }
-
-  // Front edge (face at iy = 0, normal should be -Y)
-  // Strip runs along X: top_a is (ix, 0), top_b is (ix+1, 0)
-  for (let ix = 0; ix < nx; ix++) {
+  // Front edge (iy = 0)
+  for (let ix = 0; ix < nx - 1; ix++) {
     const top_a = side_top_offset + idx(ix, 0, true);
     const top_b = side_top_offset + idx(ix + 1, 0, true);
     const bot_a = idx(ix, 0, false);
     const bot_b = idx(ix + 1, 0, false);
-    // Winding for -Y normal: (top_a, bot_a, top_b), (top_b, bot_a, bot_b)
-    // Note: This is the same pattern as Right face, but orientation of strip is different.
     indices.push(top_a, bot_a, top_b, top_b, bot_a, bot_b);
   }
-
-  // Back edge (face at iy = ny, normal should be +Y)
-  // Strip runs along X: top_a is (ix, ny), top_b is (ix+1, ny)
-  for (let ix = 0; ix < nx; ix++) {
-    const top_a = side_top_offset + idx(ix, ny, true);
-    const top_b = side_top_offset + idx(ix + 1, ny, true);
-    const bot_a = idx(ix, ny, false);
-    const bot_b = idx(ix + 1, ny, false);
-    // Winding for +Y normal: (top_a, top_b, bot_a), (bot_a, top_b, bot_b)
-    // Note: This is the same pattern as Left face, but orientation of strip is different.
+  // Back edge (iy = ny-1)
+  for (let ix = 0; ix < nx - 1; ix++) {
+    const top_a = side_top_offset + idx(ix, ny - 1, true);
+    const top_b = side_top_offset + idx(ix + 1, ny - 1, true);
+    const bot_a = idx(ix, ny - 1, false);
+    const bot_b = idx(ix + 1, ny - 1, false);
     indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
   }
-
-  // Debugging: Verify edge sharing (DISABLED for large meshes)
-  // const edge_map = new Map();
-  // for (let i = 0; i < indices.length; i += 3) {
-  //   const a = indices[i], b = indices[i + 1], c = indices[i + 2];
-  //   const edges = [
-  //     [a, b], [b, c], [c, a]
-  //   ];
-  //   edges.forEach(([v1, v2]) => {
-  //     const key = v1 < v2 ? `${v1},${v2}` : `${v2},${v1}`;
-  //     edge_map.set(key, (edge_map.get(key) || 0) + 1);
-  //   });
-  // }
-
 
   const stock_geometry = new THREE.BufferGeometry();
   stock_geometry.setAttribute(
@@ -291,13 +276,13 @@ function heightmap_to_solid_mesh(stock, min_z) {
     new THREE.Float32BufferAttribute(positions, 3)
   );
   stock_geometry.setIndex(indices);
-  stock_geometry.computeVertexNormals(); // Normals will now be averaged at shared edges
+  stock_geometry.computeVertexNormals();
 
   const stock_material = new THREE.MeshPhongMaterial({
     color: 0x229922,
     shininess: 80,
     specular: 0xdddddd,
-    side: THREE.DoubleSide, // Still useful if any winding is accidentally wrong
+    side: THREE.DoubleSide,
     transparent: false
   });
 
@@ -331,14 +316,14 @@ function simulate_material_removal(stock, tool, toolpath) {
       let heightmap = stock.heightmap;
       if (!heightmap) {
         // Convert 2D array to flat Float32Array (row-major)
-        const nx = Math.round(stock.width / stock.grid_size) + 1;
-        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        const nx = Math.round(stock.width / stock.grid_size_x) + 1;
+        const ny = Math.round(stock.height / stock.grid_size_y) + 1;
         heightmap = new Float32Array(nx * ny);
         for (let ix = 0; ix < nx; ix++) {
           for (let iy = 0; iy < ny; iy++) {
             heightmap[ix * ny + iy] = stock.get_height(
-              stock.origin_x + ix * stock.grid_size,
-              stock.origin_y + iy * stock.grid_size
+              stock.origin_x + ix * stock.grid_size_x,
+              stock.origin_y + iy * stock.grid_size_y
             );
           }
         }
@@ -360,9 +345,9 @@ function simulate_material_removal(stock, tool, toolpath) {
       }
       wasm_mod.simulate_material_removal_wasm(
         heightmap,
-        Math.round(stock.width / stock.grid_size) + 1,
-        Math.round(stock.height / stock.grid_size) + 1,
-        stock.grid_size,
+        Math.round(stock.width / stock.grid_size_x) + 1,
+        Math.round(stock.height / stock.grid_size_y) + 1,
+        stock.grid_size_x,
         stock.origin_x,
         stock.origin_y,
         tool.type,
@@ -372,18 +357,18 @@ function simulate_material_removal(stock, tool, toolpath) {
       );
       // WASM mutates heightmap in-place; update stock.get_height/set_height if needed
       stock.get_height = function(x, y) {
-        const ix = Math.round((x - stock.origin_x) / stock.grid_size);
-        const iy = Math.round((y - stock.origin_y) / stock.grid_size);
-        const nx = Math.round(stock.width / stock.grid_size) + 1;
-        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        const ix = Math.round((x - stock.origin_x) / stock.grid_size_x);
+        const iy = Math.round((y - stock.origin_y) / stock.grid_size_y);
+        const nx = Math.round(stock.width / stock.grid_size_x) + 1;
+        const ny = Math.round(stock.height / stock.grid_size_y) + 1;
         if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return 0;
         return heightmap[ix * ny + iy];
       };
       stock.set_height = function(x, y, z) {
-        const ix = Math.round((x - stock.origin_x) / stock.grid_size);
-        const iy = Math.round((y - stock.origin_y) / stock.grid_size);
-        const nx = Math.round(stock.width / stock.grid_size) + 1;
-        const ny = Math.round(stock.height / stock.grid_size) + 1;
+        const ix = Math.round((x - stock.origin_x) / stock.grid_size_x);
+        const iy = Math.round((y - stock.origin_y) / stock.grid_size_y);
+        const nx = Math.round(stock.width / stock.grid_size_x) + 1;
+        const ny = Math.round(stock.height / stock.grid_size_y) + 1;
         if (ix < 0 || iy < 0 || ix >= nx || iy >= ny) return;
         heightmap[ix * ny + iy] = z;
       };

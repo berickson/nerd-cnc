@@ -468,16 +468,19 @@ const StartPage: React.FC = () => {
     // 1. Create a stock object from the heightmap bounds (STL coordinates)
     const stock_width = max_x - min_x;
     const stock_height = max_y - min_y;
-    const stock_grid_size = stock_width / grid.res_x;
+    // Use grid cell counts for stock creation
+    const grid_cells_x = grid.res_x + 1;
+    const grid_cells_y = grid.res_y + 1;
     const stock_initial_height = box.max.z;
-    // Assumption: stock origin is at (min_x, min_y, min_z)
+    // Set origin_x, origin_y to min_x, min_y (matches mesh/toolpath)
     const stock = create_heightmap_stock(
       stock_width,
       stock_height,
-      stock_grid_size,
+      grid_cells_x,
+      grid_cells_y,
       stock_initial_height,
-      min_x, // origin_x
-      min_y  // origin_y
+      min_x,
+      min_y
     );
     // 2. Generate toolpath in STL coordinates
     toolpath_points_ref.current = []; // now an array of arrays
@@ -623,14 +626,26 @@ const StartPage: React.FC = () => {
         scene_ref.current!.children
           .filter(obj => obj.userData.is_tool_path)
           .forEach(obj => scene_ref.current!.remove(obj));
+        // Always use the same bounding box for stock and toolpath grid
+        // Use min_x, min_y from the mesh bounding box for both
         const stock_width = max_x - min_x;
         const stock_height = max_y - min_y;
-        const stock_grid_size = stock_width / grid.res_x;
         const stock_initial_height = box.max.z;
+        // Compute grid cell counts: only the larger dimension gets the full resolution
+        let grid_cells_x, grid_cells_y;
+        if (stock_width >= stock_height) {
+          grid_cells_x = toolpath_grid_resolution + 1;
+          grid_cells_y = Math.round((stock_height / stock_width) * toolpath_grid_resolution) + 1;
+        } else {
+          grid_cells_y = toolpath_grid_resolution + 1;
+          grid_cells_x = Math.round((stock_width / stock_height) * toolpath_grid_resolution) + 1;
+        }
+        console.log(`Grid cells: x=${grid_cells_x}, y=${grid_cells_y} (user res=${toolpath_grid_resolution})`);
         const stock = create_heightmap_stock(
           stock_width,
           stock_height,
-          stock_grid_size,
+          grid_cells_x,
+          grid_cells_y,
           stock_initial_height,
           min_x,
           min_y
