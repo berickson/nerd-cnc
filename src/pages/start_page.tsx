@@ -796,7 +796,7 @@ const StartPage: React.FC = () => {
               style={{ width: 80, marginLeft: 8 }}
             />
             <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
-              (higher = smoother, slower)
+              (lower = smoother, slower)
             </span>
           </label>
         </div>
