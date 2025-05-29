@@ -1,13 +1,10 @@
 # Project Roadmap & TODO
 
-## Completed
-- Refactored backend and tests to use grid cell counts for heightmap/mesh generation.
-- Updated GUI to use grid cell counts, fixed mesh alignment/aspect ratio, ensured square grid cells.
-- Verified mesh/material display and alignment in GUI.
-- Robust support for large grids (e.g., 2000x2000).
-- Removed WASM tests from Jest; all WASM logic now tested in Rust.
-- `npm test` runs both JS (Jest) and Rust (cargo) tests.
-- Obsolete JS vs WASM performance benchmarks replaced with dummy tests to avoid Jest errors.
+## Issues
+- [ ] Material is removed discretely along toolpath, and not continuosly, makeing it look as if the tool is set down at individual points along the path instead of dragged along the path
+- [ ] Tools cut past mesh
+- [ ] When calculating toolpath, the shape of the tool needs to be considered against the shape of the patch it is trimming
+- [ ] Some terminology is confusing, need inline help with question mark icons or similar to enable crisp explanations 
 
 ## Next Steps: Tool Definition and Stock Simulation
 
