@@ -67,5 +67,12 @@ Hybrid strategy:
 - To run all tests: `npm test` (runs both JS and Rust tests).
 - See `wasm_kernel/README.md` for Rust-side test details.
 
+## Visualization Notes
+
+- The current "stock" mesh shown in the simulation is actually the carved result after material removal, **not** the initial, uncut stock.
+- In the future, both the starting stock (with a semi-transparent or distinct material) and the carved result (with a solid, visually distinct material) will be visualized for clarity.
+- The carved result now uses a more visually distinct, solid color/material inspired by STL's `MeshNormalMaterial` for better clarity.
+- (Planned) The initial stock will be shown with a semi-transparent or light material to distinguish it from the carved result.
+
 ## Contributing
 This project is currently for personal development and experimentation. The repository is public so others can watch progress or provide feedback if they wish. Contributions are welcome, but please open an issue or discussion before submitting a pull request.

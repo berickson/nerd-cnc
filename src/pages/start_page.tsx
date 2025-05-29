@@ -171,7 +171,7 @@ const StartPage: React.FC = () => {
   // show the stock mesh in the 3D scene whenever the show_stock toggle changes
   useEffect(() => {
     if (!scene_ref.current) return;
-    const scene = scene_ref.current; // Use 'scene' instead of 'scene_ref.current' below
+    const scene = scene_ref.current;
 
     // Remove previous stock mesh if present
     if (stock_mesh_ref.current) {
@@ -185,153 +185,17 @@ const StartPage: React.FC = () => {
         .forEach(obj => scene.remove(obj));
     }
 
-    // Show solid box for stock
+    // Show solid box for stock (actually the carved result, not the initial stock)
     if (show_stock && window.current_heightmap && box_bounds) {
       const min_z = box_bounds.min.z;
       const mesh = heightmap_to_solid_mesh(window.current_heightmap);
       mesh.userData.is_stock_heightmap = true;
-      // mesh.position.set(box_bounds.min.x, box_bounds.min.y, 0);
+      // This mesh is the carved result after simulation, not the initial uncut stock.
+      // Use a visually distinct, solid material for clarity
+      mesh.material = new THREE.MeshNormalMaterial({ flatShading: true });
       scene.add(mesh);
     }
-
   }, [show_stock, box_bounds, scene_ref.current, stock_update_counter]);
-
-  // Section: tool effect: show the tool in the 3D scene whenever tool parameters or bounding box change
-  useEffect(() => {
-    if (!scene_ref.current) {
-      console.log('Tool effect: scene_ref.current is not set');
-      return;
-    }
-
-    // Remove previous tool mesh if present
-    if (tool_mesh_ref.current) {
-      scene_ref.current.remove(tool_mesh_ref.current);
-      tool_mesh_ref.current = null;
-      console.log('Removed previous tool mesh');
-    }
-
-    // Default tool position and orientation
-    let tool_position = new THREE.Vector3(0, 0, 0);
-    let tool_rotation = new THREE.Euler(Math.PI / 2, 0, 0);
-
-    if (box_bounds) {
-      // Place the cutter tip just outside the top-front-left edge (min.x, max.y, max.z) of the bounding box
-      // Offset by half the cutter diameter in -X so the tool is "outside" and ready to cut in
-      const left_x = box_bounds.min.x;
-      const front_y = box_bounds.max.y;
-      const top_z = box_bounds.max.z;
-      tool_position = new THREE.Vector3(
-        left_x,
-        front_y,
-        top_z
-      );
-      console.log('Tool effect: tool_position (outside top-front-left)', tool_position);
-    } else {
-      console.log('Tool effect: using default tool_position', tool_position);
-    }
-
-    // Create a group for the tool
-    const tool_group = new THREE.Group();
-
-    // Cutter (lower part)
-    let cutter_geometry;
-    if (tool.type === 'ball') {
-      // Ball-nose: cylinder + hemisphere
-      const cyl_height = Math.max(tool.length_of_cut - tool.cutter_diameter / 2, 0.001);
-      const cyl_geom = new THREE.CylinderGeometry(
-        tool.cutter_diameter / 2,
-        tool.cutter_diameter / 2,
-        cyl_height,
-        32
-      );
-      cyl_geom.translate(0, tool.cutter_diameter / 4, 0); // move cylinder so its base is at y=0
-      // SphereGeometry(radius, widthSegments, heightSegments, phiStart, phiLength, thetaStart, thetaLength)
-      const sphere_geom = new THREE.SphereGeometry(
-        tool.cutter_diameter / 2, // radius
-        32,                      // widthSegments
-        16,                      // heightSegments
-        0,                       // phiStart
-        Math.PI * 2,             // phiLength
-        -Math.PI,                // thetaStart (start at bottom pole)
-        Math.PI / 2              // thetaLength (only lower hemisphere)
-      );
-      sphere_geom.translate(0, -cyl_height / 2 + tool.cutter_diameter / 4, 0); // move hemisphere so its pole is at y=0
-      cutter_geometry = BufferGeometryUtils.mergeGeometries([
-        cyl_geom,
-        sphere_geom
-      ]);
-      // Recompute normals so the ball is visible from all sides
-      cutter_geometry.computeVertexNormals();
-    } else if (tool.type === 'vbit') {
-      // V-bit: visualize as a cone with correct V angle
-      // v_angle is the included angle at the tip (degrees)
-      const radius = tool.cutter_diameter / 2;
-      const v_angle_rad = tool.v_angle * Math.PI / 180;
-      // height from tip to base for this angle
-      const height = radius / Math.tan(v_angle_rad / 2);
-      const cone_geom = new THREE.ConeGeometry(
-        radius,
-        height,
-        64 // segments for smoothness
-      );
-      // rotate 180 degrees around X to make the tip point down
-      cone_geom.rotateX(Math.PI);
-      // Move cone so tip is at y=0 (default is base at y=0)
-      cone_geom.translate(0, -(tool.length_of_cut / 2 - height / 2), 0);
-      cutter_geometry = cone_geom;
-
-      // the cones still should have a cutting edge, so we need to add a cylinder at the base
-      const base_cylinder_geom = new THREE.CylinderGeometry(
-        tool.cutter_diameter / 2,
-        tool.cutter_diameter / 2,
-        tool.length_of_cut - height, // length of cut minus the cone height
-        32
-      );
-      base_cylinder_geom.translate(0, height / 2, 0); // move cylinder so its base is at y=0
-      // Merge the cone and cylinder geometries
-      cutter_geometry = BufferGeometryUtils.mergeGeometries([
-        cutter_geometry,
-        base_cylinder_geom
-      ]);
-
-
-    } else {
-      // Flat endmill: just a cylinder
-      cutter_geometry = new THREE.CylinderGeometry(
-        tool.cutter_diameter / 2,
-        tool.cutter_diameter / 2,
-        tool.length_of_cut,
-        32
-      );
-    }
-    // Use double-sided material so the ball-nose is visible from all angles
-    const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0, side: THREE.DoubleSide });
-    const cutter_mesh = new THREE.Mesh(cutter_geometry, cutter_material);
-    cutter_mesh.position.y = tool.length_of_cut / 2; // build up from origin
-    tool_group.add(cutter_mesh);
-
-    // Shank (upper part) - blue
-    const shank_length = Math.max(tool.overall_length - tool.length_of_cut, 0.0001);
-    const shank_geometry = new THREE.CylinderGeometry(
-      tool.shank_diameter / 2,
-      tool.shank_diameter / 2,
-      shank_length,
-      32
-    );
-    const shank_material = new THREE.MeshPhongMaterial({ color: 0x2196f3 });
-    const shank_mesh = new THREE.Mesh(shank_geometry, shank_material);
-    shank_mesh.position.y = tool.length_of_cut + shank_length / 2;
-    tool_group.add(shank_mesh);
-
-    tool_group.position.copy(tool_position);
-    tool_group.rotation.copy(tool_rotation);
-
-    tool_group.userData.is_tool_visual = true;
-    scene_ref.current.add(tool_group);
-    tool_mesh_ref.current = tool_group;
-    console.log('Tool effect: tool mesh added at', tool_position, 'rotation', tool_rotation);
-  }, [tool, box_bounds, scene_ref.current]);
-
 
   // update mesh material to wireframe or normal based on show_wireframe toggle
   useEffect(() => {
@@ -341,7 +205,8 @@ const StartPage: React.FC = () => {
         if (show_wireframe) {
           obj.material = new THREE.MeshBasicMaterial({ color: 0x2196f3, wireframe: true });
         } else {
-          obj.material = new THREE.MeshNormalMaterial();
+          // Use a blue-tinted MeshPhongMaterial for STL mesh to distinguish from carved result
+          obj.material = new THREE.MeshPhongMaterial({ color: 0x2196f3, flatShading: true });
         }
       }
     });
@@ -732,7 +597,8 @@ const StartPage: React.FC = () => {
       const loader = new STLLoader();
       const geometry = loader.parse(contents as ArrayBuffer);
       set_stl_geometry(geometry);
-      const material = new THREE.MeshNormalMaterial();
+      // Use a blue-tinted MeshPhongMaterial for STL mesh to distinguish from carved result
+      const material = new THREE.MeshPhongMaterial({ color: 0x2196f3, flatShading: true });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.is_stl = true;
       scene_ref.current!.add(mesh);
