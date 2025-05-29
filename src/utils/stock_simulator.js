@@ -254,18 +254,18 @@ function heightmap_to_solid_mesh(stock, min_z) {
     indices.push(top_a, top_b, bot_a, bot_a, top_b, bot_b);
   }
 
-  // Debugging: Verify edge sharing
-  const edge_map = new Map();
-  for (let i = 0; i < indices.length; i += 3) {
-    const a = indices[i], b = indices[i + 1], c = indices[i + 2];
-    const edges = [
-      [a, b], [b, c], [c, a]
-    ];
-    edges.forEach(([v1, v2]) => {
-      const key = v1 < v2 ? `${v1},${v2}` : `${v2},${v1}`;
-      edge_map.set(key, (edge_map.get(key) || 0) + 1);
-    });
-  }
+  // Debugging: Verify edge sharing (DISABLED for large meshes)
+  // const edge_map = new Map();
+  // for (let i = 0; i < indices.length; i += 3) {
+  //   const a = indices[i], b = indices[i + 1], c = indices[i + 2];
+  //   const edges = [
+  //     [a, b], [b, c], [c, a]
+  //   ];
+  //   edges.forEach(([v1, v2]) => {
+  //     const key = v1 < v2 ? `${v1},${v2}` : `${v2},${v1}`;
+  //     edge_map.set(key, (edge_map.get(key) || 0) + 1);
+  //   });
+  // }
 
 
   const stock_geometry = new THREE.BufferGeometry();
