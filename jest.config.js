@@ -2,7 +2,7 @@
 /** @type {import('jest').Config} */
 module.exports = {
   testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.js'],
+  // extensionsToTreatAsEsm: ['.js'],
   transform: {},
   moduleNameMapper: {
     // Mock WASM imports for Node tests
