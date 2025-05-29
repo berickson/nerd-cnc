@@ -51,6 +51,7 @@ const StartPage: React.FC = () => {
   const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
   const [simulation_dirty, set_simulation_dirty] = React.useState(false);
+  const [generating, set_generating] = React.useState(false); // true while simulation is running
 
   // Add v_angle to tool state for vbit support
   const [tool, set_tool] = React.useState({
@@ -560,28 +561,34 @@ const StartPage: React.FC = () => {
 
   function handle_generate() {
     if (!stl_geometry || !box_bounds) return;
-    set_last_tool(tool);
+    set_generating(true); // Disable button instantly
+    set_simulation_dirty(false); // Mark as not dirty
 
-    // Calculate grid cell size considering both X and Y dimensions
-    const grid_cell_size_x = (box_bounds.max.x - box_bounds.min.x) / toolpath_grid_resolution;
-    const grid_cell_size_y = (box_bounds.max.y - box_bounds.min.y) / toolpath_grid_resolution;
-    const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2; // Add 20% margin to ensure coverage
+    setTimeout(() => {
+      set_last_tool(tool);
 
-    // Debugging log for grid cell size and tool diameter
-    console.log('Grid cell size (X):', grid_cell_size_x, 'Grid cell size (Y):', grid_cell_size_y, 'Effective grid cell size with margin:', required_tool_size, 'Tool cutter diameter:', tool.cutter_diameter);
+      // Calculate grid cell size considering both X and Y dimensions
+      const grid_cell_size_x = (box_bounds.max.x - box_bounds.min.x) / toolpath_grid_resolution;
+      const grid_cell_size_y = (box_bounds.max.y - box_bounds.min.y) / toolpath_grid_resolution;
+      const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2; // Add 20% margin to ensure coverage
 
-    // Add a warning if the tool size is too small compared to the grid size
-    if (tool.cutter_diameter <= required_tool_size) {
-      set_tool_error(
-        `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
-      );
-      return;
-    } else {
-      set_tool_error(null);
-    }
+      // Debugging log for grid cell size and tool diameter
+      console.log('Grid cell size (X):', grid_cell_size_x, 'Grid cell size (Y):', grid_cell_size_y, 'Effective grid cell size with margin:', required_tool_size, 'Tool cutter diameter:', tool.cutter_diameter);
 
-    run_simulation(stl_geometry, tool, box_bounds);
-    set_simulation_dirty(false);
+      // Add a warning if the tool size is too small compared to the grid size
+      if (tool.cutter_diameter <= required_tool_size) {
+        set_tool_error(
+          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
+        );
+        set_generating(false);
+        return;
+      } else {
+        set_tool_error(null);
+      }
+
+      run_simulation(stl_geometry, tool, box_bounds);
+      set_generating(false);
+    }, 0);
   }
 
   // handle_file_change: loads STL, generates heightmap, toolpath, simulates material removal, updates visualization
@@ -776,7 +783,7 @@ const StartPage: React.FC = () => {
             )}
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
-          <button style={{ width: '100%' }} onClick={handle_generate} disabled={!simulation_dirty}>Generate</button>
+          <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
         </div>
         {/* Visibility Section */}
         <div>
