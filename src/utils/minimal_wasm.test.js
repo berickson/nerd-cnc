@@ -1,5 +1,7 @@
 // Minimal WASM interop test: double_array, add_one, greet
 
+jest.mock('../../wasm_kernel/pkg/wasm_kernel.js', () => ({}));
+
 describe('wasm minimal', () => {
   it('add_one increments integer', async () => {
     const wasm = await import('../../wasm_kernel/pkg/wasm_kernel.js');

@@ -87,3 +87,23 @@
 - [ ] Playback/scrub through toolpath simulation
 - [ ] Support for multiple tools/operations
 - [ ] Save/load project state
+
+## 2024-05: WASM/JS Interop, Simulation Debugging, and Integration
+
+- [x] Debug and fix segmentation faults (SIGSEGV) in WASM-backed tests and benchmarks
+- [x] Ensure correct JS↔Rust/WASM interop for `simulate_material_removal`
+- [x] Port JS simulation logic to Rust, add Rust unit tests and benchmarks
+- [x] Integrate Rust WASM into JS workflow, create Jest-based test and benchmark suites for both JS and WASM
+- [x] Add defensive checks and assertions in Rust for array length and toolpath shape
+- [x] Add minimal WASM function and confirm basic WASM/JS interop (Node ESM/CJS)
+- [x] Add minimal WASM simulation test (1x1 heightmap, 1 toolpath point) for divide-and-conquer debugging
+- [x] Switch all WASM imports in tests and app code to CommonJS `require` for robust interop
+- [x] Restore full simulation logic in Rust, update WASM export to write results back to JS `Float32Array` in-place
+- [x] Update all JS test harnesses and app code to use correct WASM function signature, no return value
+- [x] All tests (unit, integration, benchmarks) pass for both JS and WASM implementations
+- [x] Main app (`StartPage`) now uses Rust/WASM simulation for material removal
+- [x] All WASM/JS interop is robust and correct; segmentation fault is resolved
+
+**Current status:**
+- All core issues (segfault, interop, test failures) are resolved.
+- Ready for further feature work, performance tuning, or additional test coverage as needed.

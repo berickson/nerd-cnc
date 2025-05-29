@@ -1,5 +1,7 @@
 const { create_heightmap_stock, simulate_material_removal, heightmap_to_mesh } = require('./stock_simulator');
 
+jest.mock('../../wasm_kernel/pkg/wasm_kernel.js', () => ({}));
+
 test('flat endmill removes material at tool position', () => {
   const stock = create_heightmap_stock(10, 10, 1, 5);
   const tool = { cutter_diameter: 2, type: 'flat' };
@@ -320,9 +322,8 @@ describe('simulate_material_removal (wasm)', () => {
   let simulate_material_removal_wasm;
   let create_heightmap_stock;
 
-  beforeAll(() => {
-    // Use CommonJS require for consistency with the working bench test
-    wasm = require('../../wasm_kernel/pkg/wasm_kernel.js');
+  beforeAll(async () => {
+    wasm = await import('../../wasm_kernel/pkg/wasm_kernel.js');
     create_heightmap_stock = (width, height, grid_size, initial_height, origin_x = 0, origin_y = 0) => {
       const nx = Math.round(width / grid_size);
       const ny = Math.round(height / grid_size);

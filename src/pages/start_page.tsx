@@ -1,14 +1,14 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
 import { heightmap_from_mesh } from '../utils/heightmap_from_mesh.js';
 import { generate_gcode } from '../utils/gcode_generator.js';
 import { create_heightmap_stock, simulate_material_removal, heightmap_to_solid_mesh } from "../utils/stock_simulator.js";
-import { Line2 } from 'three/examples/jsm/lines/Line2.js';
-import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
-import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
+import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import '../global.css'
 declare global {
   interface Window {
@@ -64,6 +64,7 @@ const StartPage: React.FC = () => {
   const [tool_error, set_tool_error] = React.useState<string | null>(null);
   const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
   const [last_tool, set_last_tool] = React.useState(tool);
+  const [stock_update_counter, set_stock_update_counter] = useState(0);
 
   //////////////////////////////////////////////////////////
   // effects
@@ -190,7 +191,7 @@ const StartPage: React.FC = () => {
       scene.add(mesh);
     }
 
-  }, [show_stock, box_bounds, scene_ref.current]);
+  }, [show_stock, box_bounds, scene_ref.current, stock_update_counter]);
 
   // Section: tool effect: show the tool in the 3D scene whenever tool parameters or bounding box change
   useEffect(() => {
@@ -551,7 +552,7 @@ const StartPage: React.FC = () => {
 
     // 5. Assign to window.current_heightmap for visualization effect
     window.current_heightmap = stock;
-
+    set_stock_update_counter((c: number) => c + 1);
     // 6. Force update by toggling show_stock or updating box_bounds
     set_show_stock(false);
     setTimeout(() => set_show_stock(true), 0)
@@ -622,39 +623,22 @@ const StartPage: React.FC = () => {
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-
       {/* Control Panel */}
-      <div className="control-panel" style={{
-        position: 'absolute',
-        top: 20,
-        left: 20,
-        zIndex: 20,
-      }}>
+      <div className="control-panel" style={{ position: 'absolute', top: 20, left: 20, zIndex: 20 }}>
         {/* File Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>File</div>
-          <input
-            type="file"
-            accept=".stl"
-            onChange={handle_file_change}
-            style={{ width: '100%' }}
-          />
+          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%' }} />
         </div>
         {/* Export Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Export</div>
-          <button
-            style={{ width: '100%' }}
-            onClick={handle_export_gcode}
-          >
-            Export G-code
-          </button>
+          <button style={{ width: '100%' }} onClick={handle_export_gcode}>Export G-code</button>
         </div>
-
         {/* Calculation Parameters Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
-          <label>
+          <label style={{ display: 'block', marginBottom: 4 }}>
             Toolpath Grid Resolution
             <input
               type="number"
@@ -669,7 +653,7 @@ const StartPage: React.FC = () => {
               style={{ width: 80, marginLeft: 8 }}
             />
           </label>
-          <label>
+          <label style={{ display: 'block', marginBottom: 4 }}>
             Tool Step Over (% of Cutter Diameter)
             <input
               type="number"
@@ -688,14 +672,10 @@ const StartPage: React.FC = () => {
             </span>
           </label>
         </div>
-
         {/* Tool Section */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Tool</div>
-          <form
-            onSubmit={e => e.preventDefault()}
-            style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
-          >
+          <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label>
               Cutter Diameter
               <input
@@ -721,6 +701,7 @@ const StartPage: React.FC = () => {
                 onChange={e => {
                   const v = parseFloat(e.target.value);
                   set_tool(t => ({ ...t, shank_diameter: v }));
+                  set_simulation_dirty(true);
                 }}
               />
               mm
@@ -735,6 +716,7 @@ const StartPage: React.FC = () => {
                 onChange={e => {
                   const v = parseFloat(e.target.value);
                   set_tool(t => ({ ...t, overall_length: v }));
+                  set_simulation_dirty(true);
                 }}
               />
               mm
@@ -749,6 +731,7 @@ const StartPage: React.FC = () => {
                 onChange={e => {
                   const v = parseFloat(e.target.value);
                   set_tool(t => ({ ...t, length_of_cut: v }));
+                  set_simulation_dirty(true);
                 }}
               />
               mm
@@ -762,7 +745,7 @@ const StartPage: React.FC = () => {
                   if (new_type === 'vbit') {
                     set_tool(t => ({ ...t, type: new_type, v_angle: t.v_angle || 60 }));
                   } else {
-                    set_tool(t => ({ ...t, type: new_type, v_angle: 60 })); // always keep v_angle present for type safety
+                    set_tool(t => ({ ...t, type: new_type, v_angle: 60 }));
                   }
                   set_simulation_dirty(true);
                 }}
@@ -793,89 +776,51 @@ const StartPage: React.FC = () => {
             )}
             {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
           </form>
-          <button
-            style={{ width: '100%' }}
-            onClick={handle_generate}
-            disabled={!simulation_dirty}
-          >
-            Generate
-          </button>
+          <button style={{ width: '100%' }} onClick={handle_generate} disabled={!simulation_dirty}>Generate</button>
         </div>
-
         {/* Visibility Section */}
         <div>
           <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
           <label style={{ display: 'block', marginBottom: 4 }}>
-            <input
-              type="checkbox"
-              checked={show_mesh}
-              onChange={e => set_show_mesh(e.target.checked)}
-            />{' '}
+            <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
             Show Mesh
           </label>
           <label style={{ display: 'block', marginBottom: 4 }}>
-            <input
-              type="checkbox"
-              checked={show_toolpath}
-              onChange={e => set_show_toolpath(e.target.checked)}
-            />{' '}
+            <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
             Show Toolpath
           </label>
           <label style={{ display: 'block', marginBottom: 4 }}>
-            <input
-              type="checkbox"
-              checked={show_stock}
-              onChange={e => set_show_stock(e.target.checked)}
-            />{' '}
+            <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
             Show Stock
           </label>
-          <label style={{ display: 'block' }}>
-            <input
-              type="checkbox"
-              checked={show_bounding_box}
-              onChange={e => set_show_bounding_box(e.target.checked)}
-            />{' '}
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
             Show Bounding Box
           </label>
-        </div>
-
-        {/* Wireframe Section */}
-        <label style={{ display: 'block', marginBottom: 4 }}>
-          <input
-            type="checkbox"
-            checked={show_wireframe}
-            onChange={e => set_show_wireframe(e.target.checked)}
-          />{' '}
-          Show Wireframe
-        </label>
-
-        {/* Bounding Box Info and Controls */}
-        <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
-          <div>
-            <strong>Bounding Box:</strong>{' '}
-            {boxSize &&
-              `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <strong>3D Controls:</strong>
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+            Show Wireframe
+          </label>
+          {/* Bounding Box Info and Controls */}
+          <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
             <div>
-              Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
-              Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
-              Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+              <strong>Bounding Box:</strong>{' '}
+              {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <strong>3D Controls:</strong>
+              <div>
+                Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
+                Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
+                Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div
-        ref={mount_ref}
-        style={{
-          width: '100vw',
-          height: '100vh',
-        }}
-      />
+      <div ref={mount_ref} style={{ width: '100vw', height: '100vh' }} />
     </div>
   );
-
 };
 
-export default StartPage;;
+export default StartPage;
