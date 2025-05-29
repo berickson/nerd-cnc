@@ -48,6 +48,7 @@ const StartPage: React.FC = () => {
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
+  const [show_initial_stock, set_show_initial_stock] = React.useState(false); // Add state for initial stock visibility
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
   const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
@@ -71,6 +72,11 @@ const StartPage: React.FC = () => {
 
   // Add state for carved result wireframe
   const [show_stock_wireframe, set_show_stock_wireframe] = React.useState(false);
+
+  // Flatten operation states
+  const [flatten_depth, set_flatten_depth] = React.useState(5); // mm, default flatten depth
+  const [generating_flatten, set_generating_flatten] = React.useState(false);
+  const [flatten_toolpath, set_flatten_toolpath] = React.useState<any>(null);
 
   //////////////////////////////////////////////////////////
   // effects
@@ -468,7 +474,7 @@ const StartPage: React.FC = () => {
 
       if (tool.cutter_diameter <= required_tool_size) {
         set_tool_error(
-          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
+          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2} mm). Increase the tool size or grid resolution for better results.`
         );
         set_generating(false);
         return;
@@ -608,7 +614,7 @@ const StartPage: React.FC = () => {
       const contents = e.target?.result;
       if (!contents) return;
 
-      // Remove previous STL meshes and bounding boxes
+      // Remove previous STL meshes, bounding boxes, and toolpaths
       scene_ref.current!.children
         .filter(obj => obj.userData.is_stl || obj.userData.is_bounding_box || obj.userData.is_tool_path)
         .forEach(obj => scene_ref.current!.remove(obj));
@@ -628,11 +634,125 @@ const StartPage: React.FC = () => {
       if (geometry.boundingBox) {
         const box = new THREE.Box3().setFromObject(mesh);
         set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
+        // Remove any previous bounding box
+        scene_ref.current!.children
+          .filter(obj => obj.userData.is_bounding_box)
+          .forEach(obj => scene_ref.current!.remove(obj));
+        // Add bounding box helper immediately after STL load
+        const boxHelper = new THREE.Box3Helper(box, 0xff0000);
+        boxHelper.userData.is_bounding_box = true;
+        boxHelper.visible = show_bounding_box;
+        scene_ref.current!.add(boxHelper);
       }
       set_simulation_dirty(true);
     };
     reader.readAsArrayBuffer(file);
   };
+
+  //////////////////////////////////////////////////////////
+  // Add effect to render/remove the initial stock block
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    const scene = scene_ref.current;
+    // Remove previous initial stock mesh if present
+    scene.children
+      .filter((obj: any) => obj.userData && obj.userData.is_initial_stock)
+      .forEach((obj: any) => scene.remove(obj));
+    if (show_initial_stock && box_bounds) {
+      // Render a transparent rectangular solid for the initial stock
+      const size = new THREE.Vector3();
+      const min = box_bounds.min;
+      const max = box_bounds.max;
+      size.subVectors(max, min);
+      const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+      const material = new THREE.MeshPhongMaterial({ color: 0xffffff, opacity: 0.18, transparent: true });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(
+        min.x + size.x / 2,
+        min.y + size.y / 2,
+        min.z + size.z / 2
+      );
+      mesh.userData.is_initial_stock = true;
+      scene.add(mesh);
+    }
+  }, [show_initial_stock, box_bounds]);
+
+  // Flatten operation effect: generate toolpath for flattening
+  useEffect(() => {
+    if (!scene_ref.current || !box_bounds || !stl_geometry) return;
+    const scene = scene_ref.current;
+
+    // Remove previous flatten toolpath lines
+    scene.children
+      .filter(obj => obj.userData.is_tool_path && obj.userData.operation === 'flatten')
+      .forEach(obj => scene.remove(obj));
+
+    if (flatten_toolpath && flatten_toolpath.length > 0) {
+      // Create lines for the flatten toolpath
+      const positions = [];
+      for (const pt of flatten_toolpath) {
+        positions.push(pt.x, pt.y, pt.z);
+      }
+      const line_geometry = new LineGeometry();
+      line_geometry.setPositions(positions);
+      const line_material = new LineMaterial({
+        color: 0xff9800,
+        linewidth: 2,
+        alphaToCoverage: true
+      });
+      line_material.resolution.set(window.innerWidth, window.innerHeight);
+      const line = new Line2(line_geometry, line_material);
+      line.computeLineDistances();
+      line.userData.is_tool_path = true;
+      line.userData.operation = 'flatten';
+      scene.add(line);
+    }
+  }, [flatten_toolpath, scene_ref.current, box_bounds]);
+
+  // Generate a raster flatten toolpath for the current stock bounds
+  function handle_flatten_generate() {
+    if (!box_bounds || !tool) return;
+    set_generating_flatten(true);
+    // For now, flatten the entire top face of the stock
+    const min_x = box_bounds.min.x;
+    const max_x = box_bounds.max.x;
+    const min_y = box_bounds.min.y;
+    const max_y = box_bounds.max.y;
+    const z = box_bounds.max.z - flatten_depth;
+    const step_over = tool.cutter_diameter * step_over_percent;
+    const toolpath: { x: number; y: number; z: number }[] = [];
+    let reverse = false;
+    for (
+      let y = min_y; y <= max_y; y += step_over
+    ) {
+      const line: { x: number; y: number; z: number }[] = [];
+      for (
+        let x = min_x; x <= max_x; x += step_over / 2
+      ) {
+        line.push({ x, y, z });
+      }
+      if (reverse) line.reverse();
+      toolpath.push(...line);
+      reverse = !reverse;
+    }
+    set_flatten_toolpath(toolpath);
+    set_generating_flatten(false);
+  }
+
+  // Export flatten toolpath as G-code
+  function handle_export_flatten_gcode() {
+    if (!flatten_toolpath || flatten_toolpath.length === 0 || !box_bounds) return;
+    const gcode = generate_gcode([flatten_toolpath], { safe_z: box_bounds.max.z + 5 });
+    const blob = new Blob([gcode], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'flatten.nc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
@@ -825,6 +945,11 @@ const StartPage: React.FC = () => {
               Show as Wireframe
             </label>
           )}
+          {/* Show/hide the initial stock block (transparent) */}
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            <input type="checkbox" checked={show_initial_stock} onChange={e => set_show_initial_stock(e.target.checked)} />{' '}
+            Show Stock (Initial Block)
+          </label>
           {/* Show/hide the carved result (simulated stock), with option for wireframe */}
           <label style={{ display: 'block', marginBottom: 4 }}>
             <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
@@ -861,6 +986,24 @@ const StartPage: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+        {/* Flatten Operation Section */}
+        <div style={{ marginBottom: 16, border: '1px solid #444', borderRadius: 4, padding: 8 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Flatten Operation</div>
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            Flatten Depth
+            <input
+              type="number"
+              min={0.01}
+              step={0.01}
+              value={flatten_depth}
+              onChange={e => set_flatten_depth(Number(e.target.value))}
+              style={{ width: 80, marginLeft: 8 }}
+            />
+            mm
+          </label>
+          <button style={{ width: '100%' }} onClick={handle_flatten_generate} disabled={generating_flatten}>Generate Flatten Toolpath</button>
+          <button style={{ width: '100%', marginTop: 4 }} onClick={handle_export_flatten_gcode} disabled={!flatten_toolpath || flatten_toolpath.length === 0}>Export Flatten G-code</button>
         </div>
       </div>
       <div ref={mount_ref} style={{ width: '100vw', height: '100vh' }} />
