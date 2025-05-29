@@ -59,6 +59,13 @@ Hybrid strategy:
 - Allows for fast toolpath generation after the initial precompute step.
 - Supports future improvements, such as accounting for tool shape or overhangs.
 
+## CNC Stock Simulator: Test and WASM Policy
+
+- All WASM logic is now tested in Rust (`wasm_kernel/src/`, run with `cargo test`).
+- JS tests (Jest) cover integration, UI, and non-WASM logic only.
+- Obsolete JS vs WASM performance benchmarks are now placeholders with dummy tests.
+- To run all tests: `npm test` (runs both JS and Rust tests).
+- See `wasm_kernel/README.md` for Rust-side test details.
 
 ## Contributing
 This project is currently for personal development and experimentation. The repository is public so others can watch progress or provide feedback if they wish. Contributions are welcome, but please open an issue or discussion before submitting a pull request.

@@ -33,4 +33,7 @@ module.exports = {
     open: true,
   },
   mode: 'development',
+  experiments: {
+    asyncWebAssembly: true
+  },
 };

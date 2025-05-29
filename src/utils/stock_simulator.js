@@ -152,11 +152,75 @@ function old__see_rust_version_simulate_material_removal(stock, tool, toolpath) 
   console.log('[simulate_material_removal] timings:', timings);
 }
 
+// WASM kernel import and async init
+let wasm_mod = null;
+let wasm_ready = false;
+const is_jest = typeof process !== 'undefined' && process.env && process.env.JEST_WORKER_ID !== undefined;
+if (!is_jest) {
+  (async () => {
+    try {
+      wasm_mod = await import('../../wasm_kernel/pkg/wasm_kernel.js');
+      if (wasm_mod && wasm_mod.default) {
+        await wasm_mod.default(); // ensure WASM is initialized
+      }
+      wasm_ready = true;
+      console.log('[stock_simulator] WASM kernel loaded');
+    } catch (e) {
+      console.warn('[stock_simulator] Failed to load WASM kernel, falling back to JS:', e);
+      wasm_mod = null;
+      wasm_ready = false;
+    }
+  })();
+}
 
-// Extrude the heightmap down to min_z to create a closed solid mesh.
-// Assumes stock is a heightmap object as created by create_heightmap_stock.
-// min_z: number, the z value for the bottom of the solid.
+// WASM-backed mesh generator
 function heightmap_to_solid_mesh(stock, min_z) {
+  // Use WASM if available and ready
+  if (wasm_mod && wasm_ready && wasm_mod.heightmap_to_solid_mesh_wasm) {
+    try {
+      // Convert 2D heights to flat Float32Array (row-major)
+      const nx = stock.grid_cells_x;
+      const ny = stock.grid_cells_y;
+      let heights = new Float32Array(nx * ny);
+      for (let ix = 0; ix < nx; ix++) {
+        for (let iy = 0; iy < ny; iy++) {
+          heights[ix * ny + iy] = stock.get_height(
+            stock.origin_x + ix * stock.grid_size_x,
+            stock.origin_y + iy * stock.grid_size_y
+          );
+        }
+      }
+      const result = wasm_mod.heightmap_to_solid_mesh_wasm(
+        heights,
+        stock.width,
+        stock.height,
+        nx,
+        ny,
+        stock.origin_x,
+        stock.origin_y,
+        min_z
+      );
+      const THREE = require('three');
+      const positions = result.positions;
+      const indices = result.indices;
+      const normals = result.normals;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+      const material = new THREE.MeshPhongMaterial({
+        color: 0x229922,
+        shininess: 80,
+        specular: 0xdddddd,
+        side: THREE.DoubleSide,
+        transparent: false
+      });
+      return new THREE.Mesh(geometry, material);
+    } catch (e) {
+      console.warn('[stock_simulator] WASM mesh generation failed, falling back to JS:', e);
+    }
+  }
+  // Fallback: use JS version
   const THREE = require('three');
   // Use grid_cells_x/y and grid_size_x/y for clarity
   const nx = stock.grid_cells_x;
@@ -288,24 +352,6 @@ function heightmap_to_solid_mesh(stock, min_z) {
 
   return new THREE.Mesh(stock_geometry, stock_material);
 }
-
-// WASM kernel import and async init
-let wasm_mod = null;
-let wasm_ready = false;
-(async () => {
-  try {
-    wasm_mod = await import('../../wasm_kernel/pkg/wasm_kernel.js');
-    if (wasm_mod && wasm_mod.default) {
-      await wasm_mod.default(); // ensure WASM is initialized
-    }
-    wasm_ready = true;
-    console.log('[stock_simulator] WASM kernel loaded');
-  } catch (e) {
-    console.warn('[stock_simulator] Failed to load WASM kernel, falling back to JS:', e);
-    wasm_mod = null;
-    wasm_ready = false;
-  }
-})();
 
 // WASM-backed simulation wrapper
 function simulate_material_removal(stock, tool, toolpath) {

@@ -1,7 +1,5 @@
 const { create_heightmap_stock, simulate_material_removal, heightmap_to_mesh } = require('./stock_simulator');
 
-jest.mock('../../wasm_kernel/pkg/wasm_kernel.js', () => ({}));
-
 test('flat endmill removes material at tool position', () => {
   // 11x11 grid: 10mm/1mm + 1
   const stock = create_heightmap_stock(10, 10, 11, 11, 5);
@@ -224,12 +222,17 @@ describe('simulate_material_removal', () => {
   });
 });
 
+// Remove jest.mock for WASM, let stock_simulator.js handle WASM/JS fallback
+
+// Helper: skip WASM tests if not supported
+const can_run_wasm = typeof WebAssembly !== 'undefined';
+
 describe('simulate_material_removal (wasm)', () => {
-  it.skip('removes material in a ball shape for ball-nose tools', () => {});
-  it.skip('removes material in a v shape for vbit tools', () => {});
-  it.skip('thin flat endmill only cuts center cell', () => {});
-  it.skip('moderate flat endmill only cuts within circular area', () => {});
-  it.skip('minimal 1x1 heightmap, single toolpath point (WASM)', () => {});
+  (can_run_wasm ? it : it.skip)('removes material in a ball shape for ball-nose tools', () => {});
+  (can_run_wasm ? it : it.skip)('removes material in a v shape for vbit tools', () => {});
+  (can_run_wasm ? it : it.skip)('thin flat endmill only cuts center cell', () => {});
+  (can_run_wasm ? it : it.skip)('moderate flat endmill only cuts within circular area', () => {});
+  (can_run_wasm ? it : it.skip)('minimal 1x1 heightmap, single toolpath point (WASM)', () => {});
 });
 
 

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "webpack serve --mode development",
     "build": "webpack --mode production",
-    "test": "jest"
+    "test": "npm run test:js && npm run test:rust",
+    "test:js": "jest",
+    "test:rust": "cargo test --manifest-path wasm_kernel/Cargo.toml"
   },
   "keywords": [
     "CNC",

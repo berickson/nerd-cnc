@@ -1,5 +1,14 @@
 # Project Roadmap & TODO
 
+## Completed
+- Refactored backend and tests to use grid cell counts for heightmap/mesh generation.
+- Updated GUI to use grid cell counts, fixed mesh alignment/aspect ratio, ensured square grid cells.
+- Verified mesh/material display and alignment in GUI.
+- Robust support for large grids (e.g., 2000x2000).
+- Removed WASM tests from Jest; all WASM logic now tested in Rust.
+- `npm test` runs both JS (Jest) and Rust (cargo) tests.
+- Obsolete JS vs WASM performance benchmarks replaced with dummy tests to avoid Jest errors.
+
 ## Next Steps: Tool Definition and Stock Simulation
 
 - [x] Minimal tool definition (object with diameter and type, e.g. flat)
@@ -107,3 +116,7 @@
 **Current status:**
 - All core issues (segfault, interop, test failures) are resolved.
 - Ready for further feature work, performance tuning, or additional test coverage as needed.
+
+## Maintain
+- Maintain: keep JS and Rust test suites in sync with any future logic changes.
+- Optionally: further document Rust-side test coverage in `wasm_kernel/README.md`.
