@@ -74,6 +74,38 @@
 - [ ] Start from heightmap (bitmap)
 - [ ] Vector-based workflow for importing and editing vector paths (e.g., SVG files)
 - [ ] Code-based paths for generating patterns, fractals, and spirograph-like designs
+  - [ ] Flatten operation - Flatten surface based on tool, feed rate, depth of cut
+- [ ] Multi part workflows - ex: Zero, Flatten, Manually change the bit, Mill the Top, Manually Rotate Stock, Mill 2nd face, etc.
+
+## Flatten Operation Workflow
+
+- [ ] **Flatten operation** (first-class workflow step)
+  - [ ] User can select "Flatten" as an operation (standalone or as first step in multi-part jobs)
+  - [ ] User specifies area to flatten (entire top or X/Y min/max region)
+  - [ ] User sets flatten depth (single or multi-pass)
+  - [ ] User sets tool, step-over, feedrate, safe Z, etc.
+  - [ ] App generates raster toolpath at constant Z for flattening
+  - [ ] Simulate result: update stock heightmap to new flat surface
+  - [ ] Export G-code for flatten operation
+  - [ ] After flatten, new "top" is reference for subsequent ops
+  - [ ] Integrate with multi-part workflow (flatten, flip, mill, etc.)
+
+## Multi-Part Workflow (Planned)
+
+- [ ] Multi-part jobs are supported as a sequence of operations (flatten, mill, flip, etc.)
+- [ ] Each operation generates its own G-code file (e.g., step1_flatten.nc, step2_top.nc, step3_flip.nc, ...)
+- [ ] All G-code files can be written to an SD card for use on the CNC
+- [ ] App generates a printable checklist for the workflow, e.g.:
+  1. Load stock
+  2. Zero to top of stock
+  3. Execute step 1 (flatten) G-code
+  4. Turn stock over
+  5. Zero to new face
+  6. Execute step 2 (top) G-code
+  7. ...etc.
+- [ ] Checklist includes user instructions for each step (tool changes, flips, zeroing, etc.)
+- [ ] User can print or save the checklist for shop use
+- [ ] Can simulate steps in the UI
 
 ## UX / UI
 - [ ] Group controls (file input, export, settings) in a unified panel or toolbar
