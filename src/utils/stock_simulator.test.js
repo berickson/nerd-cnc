@@ -320,8 +320,9 @@ describe('simulate_material_removal (wasm)', () => {
   let simulate_material_removal_wasm;
   let create_heightmap_stock;
 
-  beforeAll(async () => {
-    wasm = await import('../../wasm_kernel/pkg/wasm_kernel.js');
+  beforeAll(() => {
+    // Use CommonJS require for consistency with the working bench test
+    wasm = require('../../wasm_kernel/pkg/wasm_kernel.js');
     create_heightmap_stock = (width, height, grid_size, initial_height, origin_x = 0, origin_y = 0) => {
       const nx = Math.round(width / grid_size);
       const ny = Math.round(height / grid_size);
@@ -356,7 +357,7 @@ describe('simulate_material_removal (wasm)', () => {
         flat_toolpath[i * 3 + 1] = toolpath[i].y;
         flat_toolpath[i * 3 + 2] = toolpath[i].z;
       }
-      const new_heightmap = wasm.simulate_material_removal_wasm(
+      wasm.simulate_material_removal_wasm(
         stock.heightmap,
         stock.nx,
         stock.ny,
@@ -368,7 +369,7 @@ describe('simulate_material_removal (wasm)', () => {
         tool.v_angle || 0,
         flat_toolpath
       );
-      stock.heightmap.set(new_heightmap);
+      // No assignment, no mutation expected
     };
   });
 
