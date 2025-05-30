@@ -11,4 +11,5 @@ export function create_heightmap_stock(
   origin_y?: number
 ): any;
 export function simulate_material_removal(stock: any, tool: any, toolpath: any[]): void;
-export function heightmap_to_solid_mesh(stock: any): THREE.Mesh;
+// min_z is required for correct geometry (prevents NaN in bottom/side faces)
+export function heightmap_to_solid_mesh(stock: any, min_z: number): THREE.Mesh;
