@@ -76,3 +76,62 @@ Hybrid strategy:
 
 ## Contributing
 This project is currently for personal development and experimentation. The repository is public so others can watch progress or provide feedback if they wish. Contributions are welcome, but please open an issue or discussion before submitting a pull request.
+
+## Hacking
+
+### Setup
+
+- Install [Node.js](https://nodejs.org/) (v18+ recommended).
+- Install [npm](https://www.npmjs.com/) (comes with Node.js).
+- Install [Rust](https://www.rust-lang.org/tools/install) (for WASM kernel):
+  ```
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+- (Optional) Install [wasm-pack](https://rustwasm.github.io/wasm-pack/):
+  ```
+  cargo install wasm-pack
+  ```
+
+### Building
+
+- Build the WASM kernel (from project root):
+  ```
+  cd wasm_kernel
+  cargo build --release
+  cd ..
+  ```
+- Build the JS/React app:
+  ```
+  npm install
+  npm run build
+  ```
+
+### Running Locally
+
+- Start the development server:
+  ```
+  npm start
+  ```
+- Open your browser to [http://localhost:3000](http://localhost:3000)
+
+### Running Tests
+
+- Run all tests (JS + Rust):
+  ```
+  npm test
+  ```
+- Run only JS tests:
+  ```
+  npm run test:js
+  ```
+- Run only Rust (WASM) tests:
+  ```
+  cd wasm_kernel
+  cargo test
+  cd ..
+  ```
+
+### Notes
+- See `roadmap.md` for planned features and development priorities.
+- See `wasm_kernel/README.md` for Rust-side/WASM details.
+- Most development happens in `src/pages/start_page.tsx` and `src/utils/`.
