@@ -999,17 +999,19 @@ const StartPage: React.FC = () => {
         64
       );
       cone_geom.rotateX(Math.PI);
-      cone_geom.translate(0, -(op_tool.length_of_cut / 2 - cone_height / 2), 0);
+      cone_geom.translate(0, cone_height / 2, 0);
       let cutter_geoms: THREE.BufferGeometry[] = [cone_geom];
+      const cyl_height = Math.max(op_tool.length_of_cut - cone_height, 0.001);
+ 
       if (op_tool.length_of_cut > cone_height) {
-        const base_cyl_geom = new THREE.CylinderGeometry(
+        const cyl_geom = new THREE.CylinderGeometry(
           op_tool.cutter_diameter / 2,
           op_tool.cutter_diameter / 2,
-          op_tool.length_of_cut - cone_height,
+          cyl_height,
           32
         );
-        base_cyl_geom.translate(0, (op_tool.length_of_cut - cone_height) / 2, 0);
-        cutter_geoms.push(base_cyl_geom);
+        cyl_geom.translate(0, cyl_height / 2 + cone_height, 0);
+        cutter_geoms.push(cyl_geom);
       }
       cutter_geometry = BufferGeometryUtils.mergeGeometries(cutter_geoms) as THREE.BufferGeometry;
       cutter_geometry.computeVertexNormals();
