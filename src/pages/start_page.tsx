@@ -92,23 +92,11 @@ const StartPage: React.FC = () => {
   const [show_stock, set_show_stock] = React.useState(true);
   const [show_initial_stock, set_show_initial_stock] = React.useState(true); // Add state for initial stock visibility
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
-  const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(2000); // default 2000
   const [simulation_dirty, set_simulation_dirty] = React.useState(true);
   const [generating, set_generating] = React.useState(false); // true while simulation is running
 
-  // Add v_angle to tool state for vbit support
-  const [tool, set_tool] = React.useState({
-    cutter_diameter: 3.175,    // all dimensions are mm
-    shank_diameter: 3.175,
-    overall_length: 38.0,
-    length_of_cut: 17.0,
-    type: 'flat',
-    v_angle: 60 // default, only used for vbit
-  });
-  const [tool_error, set_tool_error] = React.useState<string | null>(null);
   const [stl_geometry, set_stl_geometry] = React.useState<THREE.BufferGeometry | null>(null);
-  const [last_tool, set_last_tool] = React.useState(tool);
   const [stock_update_counter, set_stock_update_counter] = useState(0);
   const [generate_timings, set_generate_timings] = React.useState<any>(null);
 
@@ -122,7 +110,7 @@ const StartPage: React.FC = () => {
 
   // Operation-driven workflow state
   const [operations, set_operations] = React.useState<Operation[]>([
-    { type: 'carve', params: { tool: { ...tool }, step_over_percent, toolpath_grid_resolution } }
+    { type: 'carve', params: { tool: { cutter_diameter: 3.175, shank_diameter: 3.175, overall_length: 38.0, length_of_cut: 17.0, type: 'flat', v_angle: 60 }, step_over_percent: 0.7, toolpath_grid_resolution: 2000 } }
   ]);
   const [selected_operation_index, set_selected_operation_index] = React.useState(0);
 
@@ -371,19 +359,17 @@ const StartPage: React.FC = () => {
 
 
     // Tool path parameters (all in STL coordinates)
-    const step_over = tool.cutter_diameter * step_over_percent;
+    const step_over = tool.cutter_diameter * 0.7;
 
     // Raster path generation (along X, stepping in Y)
-    const min_x = box.min.x, max_x = box.max.x;
-    const min_y = box.min.y, max_y = box.max.y;
     const max_z = box.max.z + 0.010; // Start just above the stock
 
     // Build the heightmap once, using STL coordinates
     const grid = {
-      min_x: min_x,
-      max_x: max_x,
-      min_y: min_y,
-      max_y: max_y,
+      min_x: box_bounds.min.x,
+      max_x: box_bounds.max.x,
+      min_y: box_bounds.min.y,
+      max_y: box_bounds.max.y,
       res_x: toolpath_grid_resolution,
       res_y: toolpath_grid_resolution,
     };
@@ -394,22 +380,29 @@ const StartPage: React.FC = () => {
       .filter(obj => obj.userData.is_tool_path)
       .forEach(obj => scene_ref.current!.remove(obj));
 
+    // Fix: define box and linewidth before using in toolpath generation
+    const toolpath_box = new THREE.Box3(
+      new THREE.Vector3(box_bounds.min.x, box_bounds.min.y, box_bounds.min.z),
+      new THREE.Vector3(box_bounds.max.x, box_bounds.max.y, max_z)
+    );
+    const toolpath_linewidth = compute_linewidth(toolpath_box);
+
     // 1. Create a stock object from the heightmap bounds (STL coordinates)
-    const stock_width = max_x - min_x;
-    const stock_height = max_y - min_y;
-    // Use grid cell counts for stock creation
-    const grid_cells_x = grid.res_x + 1;
-    const grid_cells_y = grid.res_y + 1;
-    const stock_initial_height = box.max.z;
-    // Set origin_x, origin_y to min_x, min_y (matches mesh/toolpath)
+    const stock_width = box_bounds.max.x - box_bounds.min.x;
+    const stock_height = box_bounds.max.y - box_bounds.min.y;
+    // Make grid cells square in X and Y
+    const cell_size = Math.max(stock_width, stock_height) / toolpath_grid_resolution;
+    const grid_cells_x = Math.round(stock_width / cell_size);
+    const grid_cells_y = Math.round(stock_height / cell_size);
+    const stock_initial_height = box_bounds.max.z;
     const stock = create_heightmap_stock(
       stock_width,
       stock_height,
       grid_cells_x,
       grid_cells_y,
       stock_initial_height,
-      min_x,
-      min_y
+      box_bounds.min.x,
+      box_bounds.min.y
     );
     // 2. Generate toolpath in STL coordinates
     toolpath_points_ref.current = []; // now an array of arrays
@@ -418,17 +411,17 @@ const StartPage: React.FC = () => {
     for (
       let y_idx = 0;
       y_idx < grid.res_y;
-      y_idx += Math.max(1, Math.round(step_over / ((max_y - min_y) / grid.res_y)))
+      y_idx += Math.max(1, Math.round(step_over / ((box_bounds.max.y - box_bounds.min.y) / grid.res_y)))
     ) {
-      const y = min_y + (max_y - min_y) * (y_idx / grid.res_y);
+      const y = box_bounds.min.y + (box_bounds.max.y - box_bounds.min.y) * (y_idx / grid.res_y);
       const line_points: THREE.Vector3[] = [];
       for (
         let x_idx = 0;
         x_idx < grid.res_x;
         x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
       ) {
-        const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
-        const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
+        const x = box_bounds.min.x + (box_bounds.max.x - box_bounds.min.x) * (x_idx / grid.res_x);
+        const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box_bounds.min.z;
         line_points.push(new THREE.Vector3(x, y, z));
       }
       if (reverse) line_points.reverse();
@@ -444,7 +437,7 @@ const StartPage: React.FC = () => {
       line_geometry.setPositions(positions);
       const line_material = new LineMaterial({
         color: 0x00ff00,
-        linewidth: linewidth,
+        linewidth: toolpath_linewidth,
         alphaToCoverage: true
       });
       line_material.resolution.set(window.innerWidth, window.innerHeight);
@@ -496,200 +489,150 @@ const StartPage: React.FC = () => {
   function handle_generate() {
     if (!box_bounds) return;
     const selected_op = operations[selected_operation_index];
-    if (selected_op?.type === 'flatten') {
-      // Generate flatten toolpath for the selected flatten operation
-      set_generating_flatten(true);
-      const min_x = box_bounds.min.x;
-      const max_x = box_bounds.max.x;
-      const min_y = box_bounds.min.y;
-      const max_y = box_bounds.max.y;
-      const z = box_bounds.max.z - selected_op.params.flatten_depth;
-      const step_over = selected_op.params.tool.cutter_diameter * selected_op.params.step_over_percent;
-      const toolpath: { x: number; y: number; z: number }[] = [];
-      let reverse = false;
-      for (let y = min_y; y <= max_y; y += step_over) {
-        const line: { x: number; y: number; z: number }[] = [];
-        for (let x = min_x; x <= max_x; x += step_over / 2) {
-          line.push({ x, y, z });
-        }
-        if (reverse) line.reverse();
-        toolpath.push(...line);
-        reverse = !reverse;
-      }
-      set_flatten_toolpath(toolpath);
-      // Simulate material removal for flatten toolpath and update carved result
-      // Create a stock object matching the current box_bounds
-      const size = new THREE.Vector3();
-      size.subVectors(box_bounds.max, box_bounds.min);
-      const grid_cells_x = 100; // reasonable default for flatten
-      const grid_cells_y = 100;
+    if (!selected_op) return;
+
+    // Only access tool-related properties for carve or flatten operations
+    let tool = undefined;
+    let step_over = 0;
+    let toolpath_grid_resolution = 2000;
+    if (selected_op.type === 'carve') {
+      tool = selected_op.params.tool;
+      step_over = tool.cutter_diameter * selected_op.params.step_over_percent / 100;
+      toolpath_grid_resolution = selected_op.params.toolpath_grid_resolution;
+    } else if (selected_op.type === 'flatten') {
+      tool = selected_op.params.tool;
+      step_over = tool.cutter_diameter * selected_op.params.step_over_percent / 100;
+      // flatten op does not have toolpath_grid_resolution, use default
+    }
+    // Only use tool, step_over, toolpath_grid_resolution if defined
+    if (tool) {
+      // Raster path generation (along X, stepping in Y)
+      const max_z = box_bounds.max.z + 0.010; // Start just above the stock
+
+      // Build the heightmap once, using STL coordinates
+      const grid = {
+        min_x: box_bounds.min.x,
+        max_x: box_bounds.max.x,
+        min_y: box_bounds.min.y,
+        max_y: box_bounds.max.y,
+        res_x: toolpath_grid_resolution,
+        res_y: toolpath_grid_resolution,
+      };
+      const heightmap = heightmap_from_mesh(stl_geometry!, grid);
+
+      // remove all existing toolpath lines from the scene
+      scene_ref.current!.children
+        .filter(obj => obj.userData.is_tool_path)
+        .forEach(obj => scene_ref.current!.remove(obj));
+
+      // Fix: define box and linewidth before using in toolpath generation
+      const toolpath_box = new THREE.Box3(
+        new THREE.Vector3(box_bounds.min.x, box_bounds.min.y, box_bounds.min.z),
+        new THREE.Vector3(box_bounds.max.x, box_bounds.max.y, max_z)
+      );
+      const toolpath_linewidth = compute_linewidth(toolpath_box);
+
+      // 1. Create a stock object from the heightmap bounds (STL coordinates)
+      const stock_width = box_bounds.max.x - box_bounds.min.x;
+      const stock_height = box_bounds.max.y - box_bounds.min.y;
+      // Make grid cells square in X and Y
+      const cell_size = Math.max(stock_width, stock_height) / toolpath_grid_resolution;
+      const grid_cells_x = Math.round(stock_width / cell_size);
+      const grid_cells_y = Math.round(stock_height / cell_size);
+      const stock_initial_height = box_bounds.max.z;
       const stock = create_heightmap_stock(
-        size.x,
-        size.y,
+        stock_width,
+        stock_height,
         grid_cells_x,
         grid_cells_y,
-        box_bounds.max.z,
+        stock_initial_height,
         box_bounds.min.x,
         box_bounds.min.y
       );
-      simulate_material_removal(stock, selected_op.params.tool, toolpath);
-      window.current_heightmap = stock;
-      set_stock_update_counter((c: number) => c + 1);
-      set_show_stock(false);
-      setTimeout(() => set_show_stock(true), 0);
-      set_generating_flatten(false);
-      set_simulation_dirty(false);
-      return;
-    }
-    if (!stl_geometry) return;
-    set_generating(true); // Disable button instantly
-    set_simulation_dirty(false); // Mark as not dirty
-    set_generate_timings(null);
+      // 2. Generate toolpath in STL coordinates
+      toolpath_points_ref.current = []; // now an array of arrays
+      let reverse = false;
+      const points_per_line = 200;
+      for (
+        let y_idx = 0;
+        y_idx < grid.res_y;
+        y_idx += Math.max(1, Math.round(step_over / ((box_bounds.max.y - box_bounds.min.y) / grid.res_y)))
+      ) {
+        const y = box_bounds.min.y + (box_bounds.max.y - box_bounds.min.y) * (y_idx / grid.res_y);
+        const line_points: THREE.Vector3[] = [];
+        for (
+          let x_idx = 0;
+          x_idx < grid.res_x;
+          x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
+        ) {
+          const x = box_bounds.min.x + (box_bounds.max.x - box_bounds.min.x) * (x_idx / grid.res_x);
+          const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box_bounds.min.z;
+          line_points.push(new THREE.Vector3(x, y, z));
+        }
+        if (reverse) line_points.reverse();
 
-    setTimeout(() => {
-      const timings: any = {};
-      let t0 = performance.now();
-      set_last_tool(tool);
+        // Store this tool operation (line) as an array of points
+        toolpath_points_ref.current.push(line_points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })));
 
-      // 1. Tool/parameter validation
-      const grid_cell_size_x = (box_bounds.max.x - box_bounds.min.x) / toolpath_grid_resolution;
-      const grid_cell_size_y = (box_bounds.max.y - box_bounds.min.y) / toolpath_grid_resolution;
-      const required_tool_size = Math.max(grid_cell_size_x, grid_cell_size_y) * 1.2;
-      timings.validation = performance.now() - t0;
-      t0 = performance.now();
-
-      if (tool.cutter_diameter <= required_tool_size) {
-        set_tool_error(
-          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
-        );
-        set_generating(false);
-        return;
-      } else {
-        set_tool_error(null);
+        const positions = [];
+        for (const pt of line_points) {
+          positions.push(pt.x, pt.y, pt.z);
+        }
+        const line_geometry = new LineGeometry();
+        line_geometry.setPositions(positions);
+        const line_material = new LineMaterial({
+          color: 0x00ff00,
+          linewidth: toolpath_linewidth,
+          alphaToCoverage: true
+        });
+        line_material.resolution.set(window.innerWidth, window.innerHeight);
+        const line = new Line2(line_geometry, line_material);
+        line.computeLineDistances();
+        line.userData.is_tool_path = true;
+        scene_ref.current!.add(line);
+        line.visible = show_toolpath
+        reverse = !reverse;
       }
 
-      // 2. Toolpath generation (heightmap, toolpath, lines)
-      const run_simulation_with_timing = (geometry: THREE.BufferGeometry, tool: any, box_bounds: { min: THREE.Vector3, max: THREE.Vector3 }) => {
-        let t1 = performance.now();
-        // ...existing code before heightmap...
-        const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
-        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-        const linewidth = compute_linewidth(box);
-        const boxHelper = new THREE.Box3Helper(box, 0xff0000);
-        boxHelper.userData.is_bounding_box = true;
-        scene_ref.current!.add(boxHelper);
-        boxHelper.visible = show_bounding_box;
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        set_box_size(size);
-        set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-        const step_over = tool.cutter_diameter * step_over_percent;
-        const min_x = box.min.x, max_x = box.max.x;
-        const min_y = box.min.y, max_y = box.max.y;
-        const max_z = box.max.z + 0.010;
-        const grid = {
-          min_x: min_x,
-          max_x: max_x,
-          min_y: min_y,
-          max_y: max_y,
-          res_x: toolpath_grid_resolution,
-          res_y: toolpath_grid_resolution,
-        };
-        const heightmap_start = performance.now();
-        const heightmap = heightmap_from_mesh(geometry, grid);
-        timings.heightmap = performance.now() - heightmap_start;
-        // ...existing code for toolpath...
-        scene_ref.current!.children
-          .filter(obj => obj.userData.is_tool_path)
-          .forEach(obj => scene_ref.current!.remove(obj));
-        // Always use the same bounding box for stock and toolpath grid
-        // Use min_x, min_y from the mesh bounding box for both
-        const stock_width = max_x - min_x;
-        const stock_height = max_y - min_y;
-        const stock_initial_height = box.max.z;
-        // Compute grid cell counts: only the larger dimension gets the full resolution
-        let grid_cells_x, grid_cells_y;
-        if (stock_width >= stock_height) {
-          grid_cells_x = toolpath_grid_resolution + 1;
-          grid_cells_y = Math.round((stock_height / stock_width) * toolpath_grid_resolution) + 1;
-        } else {
-          grid_cells_y = toolpath_grid_resolution + 1;
-          grid_cells_x = Math.round((stock_width / stock_height) * toolpath_grid_resolution) + 1;
+      // 3. Log toolpath extents for debugging
+      if (toolpath_points_ref.current.length > 0) {
+        let min_tx = Infinity, max_tx = -Infinity;
+        let min_ty = Infinity, max_ty = -Infinity;
+        let min_tz = Infinity, max_tz = -Infinity;
+        for (const op of toolpath_points_ref.current) {
+          for (const pt of op) {
+            if (pt.x < min_tx) min_tx = pt.x;
+            if (pt.x > max_tx) max_tx = pt.x;
+            if (pt.y < min_ty) min_ty = pt.y;
+            if (pt.y > max_ty) max_ty = pt.y;
+            if (pt.z < min_tz) min_tz = pt.z;
+            if (pt.z > max_tz) max_tz = pt.z;
+          }
         }
-        console.log(`Grid cells: x=${grid_cells_x}, y=${grid_cells_y} (user res=${toolpath_grid_resolution})`);
-        const stock = create_heightmap_stock(
-          stock_width,
-          stock_height,
-          grid_cells_x,
-          grid_cells_y,
-          stock_initial_height,
-          min_x,
-          min_y
+        console.log(
+          'Toolpath extents:',
+          'x:', min_tx, 'to', max_tx,
+          'y:', min_ty, 'to', max_ty,
+          'z:', min_tz, 'to', max_tz
         );
-        toolpath_points_ref.current = [];
-        let reverse = false;
-        const points_per_line = 200;
-        const toolpath_start = performance.now();
-        for (
-          let y_idx = 0;
-          y_idx < grid.res_y;
-          y_idx += Math.max(1, Math.round(step_over / ((max_y - min_y) / grid.res_y)))
-        ) {
-          const y = min_y + (max_y - min_y) * (y_idx / grid.res_y);
-          const line_points: THREE.Vector3[] = [];
-          for (
-            let x_idx = 0;
-            x_idx < grid.res_x;
-            x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
-          ) {
-            const x = min_x + (max_x - min_x) * (x_idx / grid.res_x);
-            const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box.min.z;
-            line_points.push(new THREE.Vector3(x, y, z));
-          }
-          if (reverse) line_points.reverse();
-          toolpath_points_ref.current.push(line_points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })));
-          const positions = [];
-          for (const pt of line_points) {
-            positions.push(pt.x, pt.y, pt.z);
-          }
-          const line_geometry = new LineGeometry();
-          line_geometry.setPositions(positions);
-          const line_material = new LineMaterial({
-            color: 0x00ff00,
-            linewidth: linewidth,
-            alphaToCoverage: true
-          });
-          line_material.resolution.set(window.innerWidth, window.innerHeight);
-          const line = new Line2(line_geometry, line_material);
-          line.computeLineDistances();
-          line.userData.is_tool_path = true;
-          scene_ref.current!.add(line);
-          line.visible = show_toolpath
-          reverse = !reverse;
-        }
-        timings.toolpath = performance.now() - toolpath_start;
-        // ...existing code for toolpath extents...
-        // 3. Material removal simulation
-        const sim_start = performance.now();
-        simulate_material_removal(stock, tool, toolpath_points_ref.current.flat());
-        timings.simulation = performance.now() - sim_start;
-        // 4. Stock mesh update/visualization
-        const mesh_start = performance.now();
-        window.current_heightmap = stock;
-        set_stock_update_counter((c: number) => c + 1);
-        set_show_stock(false);
-        setTimeout(() => set_show_stock(true), 0);
-        timings.mesh_update = performance.now() - mesh_start;
-      };
+      } else {
+        console.log('Toolpath is empty after generation!');
+      }
 
-      run_simulation_with_timing(stl_geometry, tool, box_bounds);
-      set_generate_timings(timings);
-      set_generating(false);
-    }, 0);
+      // 4. Simulate material removal after toolpath is generated (all in STL coordinates)
+      // Flatten all tool operations for simulation
+      simulate_material_removal(stock, tool, toolpath_points_ref.current.flat());
+
+      // 5. Assign to window.current_heightmap for visualization effect
+      window.current_heightmap = stock;
+      set_stock_update_counter((c: number) => c + 1);
+      // 6. Force update by toggling show_stock or updating box_bounds
+      set_show_stock(false);
+      setTimeout(() => set_show_stock(true), 0)
+    }
   }
 
-  // handle_file_change: loads STL, generates heightmap, toolpath, simulates material removal, updates visualization
-  const handle_file_change = (event: React.ChangeEvent<HTMLInputElement>) => {
+  function handle_file_change(event: React.ChangeEvent<HTMLInputElement>) {
     console.log('handleFileChange called', event.target.files?.[0]);
     const file = event.target.files?.[0];
     if (!file || !scene_ref.current) return;
@@ -849,15 +792,17 @@ const StartPage: React.FC = () => {
 
   // Generate a raster flatten toolpath for the current stock bounds
   function handle_flatten_generate() {
-    if (!box_bounds || !tool) return;
+    if (!box_bounds || !operations[selected_operation_index]) return;
+    const op = operations[selected_operation_index];
+    if (op.type !== 'flatten') return;
     set_generating_flatten(true);
     // For now, flatten the entire top face of the stock
     const min_x = box_bounds.min.x;
     const max_x = box_bounds.max.x;
     const min_y = box_bounds.min.y;
     const max_y = box_bounds.max.y;
-    const z = box_bounds.max.z - flatten_depth;
-    const step_over = tool.cutter_diameter * step_over_percent;
+    const z = box_bounds.max.z - op.params.flatten_depth;
+    const step_over = op.params.tool.cutter_diameter * op.params.step_over_percent;
     const toolpath: { x: number; y: number; z: number }[] = [];
     let reverse = false;
     for (
@@ -889,7 +834,7 @@ const StartPage: React.FC = () => {
       box_bounds.min.x,
       box_bounds.min.y
     );
-    simulate_material_removal(stock, tool, toolpath);
+    simulate_material_removal(stock, op.params.tool, toolpath);
     window.current_heightmap = stock;
     set_stock_update_counter((c: number) => c + 1);
     set_show_stock(false);
@@ -1132,9 +1077,13 @@ const StartPage: React.FC = () => {
                 {
                   type: 'carve',
                   params: {
-                    tool: { ...tool },
-                    step_over_percent,
-                    toolpath_grid_resolution
+                    tool: operations[selected_operation_index]?.type === 'carve' || operations[selected_operation_index]?.type === 'flatten'
+                      ? { ...operations[selected_operation_index].params.tool }
+                      : { cutter_diameter: 3.175, shank_diameter: 3.175, overall_length: 38.0, length_of_cut: 17.0, type: 'flat', v_angle: 60 },
+                    step_over_percent: operations[selected_operation_index]?.type === 'carve' || operations[selected_operation_index]?.type === 'flatten'
+                      ? operations[selected_operation_index].params.step_over_percent
+                      : 70,
+                    toolpath_grid_resolution: 2000
                   }
                 } as CarveOperation
               ])}
@@ -1148,9 +1097,13 @@ const StartPage: React.FC = () => {
                 {
                   type: 'flatten',
                   params: {
-                    flatten_depth,
-                    tool: { ...tool },
-                    step_over_percent
+                    flatten_depth: 1,
+                    tool: operations[selected_operation_index]?.type === 'carve' || operations[selected_operation_index]?.type === 'flatten'
+                      ? { ...operations[selected_operation_index].params.tool }
+                      : { cutter_diameter: 3.175, shank_diameter: 3.175, overall_length: 38.0, length_of_cut: 17.0, type: 'flat', v_angle: 60 },
+                    step_over_percent: operations[selected_operation_index]?.type === 'carve' || operations[selected_operation_index]?.type === 'flatten'
+                      ? operations[selected_operation_index].params.step_over_percent
+                      : 70
                   }
                 } as FlattenOperation
               ])}
