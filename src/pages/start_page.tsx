@@ -92,7 +92,6 @@ const StartPage: React.FC = () => {
   const [show_stock, set_show_stock] = React.useState(true);
   const [show_initial_stock, set_show_initial_stock] = React.useState(true); // Add state for initial stock visibility
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
-  const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(2000); // default 2000
   const [simulation_dirty, set_simulation_dirty] = React.useState(false);
   const [generating, set_generating] = React.useState(false); // true while simulation is running
@@ -122,7 +121,7 @@ const StartPage: React.FC = () => {
 
   // Operation-driven workflow state
   const [operations, set_operations] = React.useState<Operation[]>([
-    { type: 'carve', params: { tool: { ...tool }, step_over_percent, toolpath_grid_resolution } }
+    { type: 'carve', params: { tool: { ...tool }, step_over_percent: 0.7, toolpath_grid_resolution } }
   ]);
   const [selected_operation_index, set_selected_operation_index] = React.useState(0);
 
@@ -299,22 +298,6 @@ const StartPage: React.FC = () => {
   }, [show_mesh, show_toolpath, show_bounding_box]);
 
 
-
-  function handle_export_gcode() {
-    if (!box_bounds) return
-    const gcode = generate_gcode(toolpath_points_ref.current, {safe_z: box_bounds.max.z + 5});
-    const blob = new Blob([gcode], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'toolpath.nc';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-
   const fit_camera_to_object = (
     camera: THREE.OrthographicCamera,
     controls: OrbitControls,
@@ -386,7 +369,7 @@ const StartPage: React.FC = () => {
 
 
     // Tool path parameters (all in STL coordinates)
-    const step_over = tool.cutter_diameter * step_over_percent;
+    const step_over = tool.cutter_diameter * (tool.step_over_percent || 0.7);
 
     // Raster path generation (along X, stepping in Y)
     const min_x = box.min.x, max_x = box.max.x;
@@ -598,7 +581,7 @@ const StartPage: React.FC = () => {
         box.getSize(size);
         set_box_size(size);
         set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
-        const step_over = tool.cutter_diameter * step_over_percent;
+        const step_over = tool.cutter_diameter * (tool.step_over_percent || 0.7);
         const min_x = box.min.x, max_x = box.max.x;
         const min_y = box.min.y, max_y = box.max.y;
         const max_z = box.max.z + 0.010;
@@ -857,24 +840,21 @@ const StartPage: React.FC = () => {
 
   // Generate a raster flatten toolpath for the current stock bounds
   function handle_flatten_generate() {
-    if (!box_bounds || !tool) return;
-    set_generating_flatten(true);
-    // For now, flatten the entire top face of the stock
+    if (!box_bounds || !operations[selected_operation_index]) return;
+    const op = operations[selected_operation_index];
+    if (op.type !== 'flatten') return;
+    const tool = op.params.tool;
+    const step_over = tool.cutter_diameter * op.params.step_over_percent;
     const min_x = box_bounds.min.x;
     const max_x = box_bounds.max.x;
     const min_y = box_bounds.min.y;
     const max_y = box_bounds.max.y;
-    const z = box_bounds.max.z - flatten_depth;
-    const step_over = tool.cutter_diameter * step_over_percent;
+    const z = box_bounds.max.z - op.params.flatten_depth;
     const toolpath: { x: number; y: number; z: number }[] = [];
     let reverse = false;
-    for (
-      let y = min_y; y <= max_y; y += step_over
-    ) {
+    for (let y = min_y; y <= max_y; y += step_over) {
       const line: { x: number; y: number; z: number }[] = [];
-      for (
-        let x = min_x; x <= max_x; x += step_over / 2
-      ) {
+      for (let x = min_x; x <= max_x; x += step_over / 2) {
         line.push({ x, y, z });
       }
       if (reverse) line.reverse();
@@ -886,7 +866,7 @@ const StartPage: React.FC = () => {
     // Create a stock object matching the current box_bounds
     const size = new THREE.Vector3();
     size.subVectors(box_bounds.max, box_bounds.min);
-    const grid_cells_x = 100; // reasonable default for flatten
+    const grid_cells_x = 100;
     const grid_cells_y = 100;
     const stock = create_heightmap_stock(
       size.x,
@@ -1050,6 +1030,9 @@ const StartPage: React.FC = () => {
     tool_mesh_ref.current = tool_group;
   }, [operations, selected_operation_index, box_bounds, scene_ref.current]);
 
+  // Define default step over percent for new operations
+  const default_step_over_percent = 0.7; // 70% of cutter diameter is a common default
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       {/* Control Panel */}
@@ -1069,20 +1052,17 @@ const StartPage: React.FC = () => {
             </div>
           )}
         </div>
-        {/* File Section (only show if not yet defined) */}
-        {!stock_defined && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
-            <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
-            <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
-              Start with Blank Stock
-            </button>
-          </div>
-        )}
+        {/* File Section (always visible) */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
+          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
+          <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
+            Start with Blank Stock
+          </button>
+        </div>
         {/* Hide all other controls until stock is defined */}
         {stock_defined && (
           <>
-            {/* Export Section (removed, now per-operation) */}
             {/* Calculation Parameters Section */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
@@ -1101,42 +1081,20 @@ const StartPage: React.FC = () => {
                   style={{ width: 80, marginLeft: 8 }}
                 />
               </label>
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                Tool Step Over (% of Cutter Diameter)
-                <input
-                  type='number'
-                  min={0.05}
-                  max={1.0}
-                  step="any"
-                  value={step_over_percent}
-                  onChange={e => {
-                    set_step_over_percent(Number(e.target.value));
-                    set_simulation_dirty(true);
-                  }}
-                  style={{ width: 80, marginLeft: 8 }}
-                />
-                <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
-                  (lower = smoother, slower)
-                </span>
-              </label>
             </div>
             {/* Visibility Section */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
-              {/* Show/hide the original STL model, with option for wireframe, only if STL is loaded */}
-              {stl_geometry && (
-                <>
-                  <label style={{ display: 'block', marginBottom: 4 }}>
-                    <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
-                    Show STL Model
-                  </label>
-                  {show_mesh && (
-                    <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-                      <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
-                      Show as Wireframe
-                    </label>
-                  )}
-                </>
+              {/* Show/hide the original STL model, with option for wireframe */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
+                Show STL Model
+              </label>
+              {show_mesh && (
+                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                  <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+                  Show as Wireframe
+                </label>
               )}
               {/* Show/hide the initial stock block (transparent) */}
               <label style={{ display: 'block', marginBottom: 4 }}>
@@ -1218,7 +1176,7 @@ const StartPage: React.FC = () => {
                     type: 'carve',
                     params: {
                       tool: { ...tool },
-                      step_over_percent,
+                      step_over_percent: default_step_over_percent,
                       toolpath_grid_resolution
                     }
                   } as CarveOperation
@@ -1235,7 +1193,7 @@ const StartPage: React.FC = () => {
                     params: {
                       flatten_depth,
                       tool: { ...tool },
-                      step_over_percent
+                      step_over_percent: default_step_over_percent
                     }
                   } as FlattenOperation
                 ])}
@@ -1371,11 +1329,35 @@ const StartPage: React.FC = () => {
                             °
                           </label>
                         )}
+                        {/* Per-operation step over input for carve */}
+                        <label>
+                          Step Over (% of Cutter Diameter)
+                          <input
+                            type="number"
+                            min={0.05}
+                            max={1.0}
+                            step="any"
+                            value={op.params.step_over_percent}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              set_operations(ops => ops.map((op2, idx) =>
+                                idx === selected_operation_index && op2.type === 'carve'
+                                  ? { ...op2, params: { ...op2.params, step_over_percent: v } }
+                                  : op2
+                              ));
+                              set_simulation_dirty(true);
+                            }}
+                            style={{ width: 80, marginLeft: 8 }}
+                          />
+                          <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
+                            (lower = smoother, slower)
+                          </span>
+                        </label>
                         <button
                           style={{ marginTop: 8 }}
-                          disabled={toolpath_points_ref.current.length === 0}
                           onClick={() => {
-                            if (!box_bounds || toolpath_points_ref.current.length === 0) return;
+                            if (!box_bounds) return;
+                            // Generate G-code for this carve operation's toolpath
                             const gcode = generate_gcode(toolpath_points_ref.current, { safe_z: box_bounds.max.z + 5 });
                             const blob = new Blob([gcode], { type: 'text/plain' });
                             const url = URL.createObjectURL(blob);
@@ -1533,9 +1515,32 @@ const StartPage: React.FC = () => {
                             °
                           </label>
                         )}
+                        {/* Per-operation step over input for flatten */}
+                        <label>
+                          Step Over (% of Cutter Diameter)
+                          <input
+                            type="number"
+                            min={0.05}
+                            max={1.0}
+                            step="any"
+                            value={op.params.step_over_percent}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              set_operations(ops => ops.map((op2, idx) =>
+                                idx === selected_operation_index && op2.type === 'flatten'
+                                  ? { ...op2, params: { ...op2.params, step_over_percent: v } }
+                                  : op2
+                              ));
+                              set_simulation_dirty(true);
+                            }}
+                            style={{ width: 80, marginLeft: 8 }}
+                          />
+                          <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
+                            (lower = smoother, slower)
+                          </span>
+                        </label>
                         <button
                           style={{ marginTop: 8 }}
-                          disabled={!flatten_toolpath || flatten_toolpath.length === 0}
                           onClick={() => {
                             if (!flatten_toolpath || flatten_toolpath.length === 0 || !box_bounds) return;
                             const gcode = generate_gcode([flatten_toolpath], { safe_z: box_bounds.max.z + 5 });
@@ -1654,10 +1659,7 @@ const StartPage: React.FC = () => {
                     );
                   })()}
                 </form>
-                {/* No generate button for stock operation */}
-                {operations[selected_operation_index]?.type !== 'stock' && (
-                  <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
-                )}
+                <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
                 {generate_timings && (
                   <div style={{ marginTop: 8, color: '#aaa', fontSize: '0.95em' }}>
                     <div><strong>Timing (ms):</strong></div>
