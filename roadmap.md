@@ -8,7 +8,19 @@
 - [ ] Some terminology is confusing, need inline help with question mark icons or similar to enable crisp explanations 
 - [ ] Bounding box doesn't show after the STL is loaded, it only shows after simulation is run
 
-## Next Steps: Tool Definition and Stock Simulation
+## Next Steps: Operation-Driven Workflow Implementation
+
+1. Add operations state array to hold the sequence of operations (flatten, carve, drill, flip, etc.).
+2. Add UI panel to display the list of operations, with controls to select, reorder, or remove operations.
+3. Implement “Add Operation” button and dialog/menu for operation type selection.
+4. When an operation is selected, show only its relevant parameter controls in the main panel.
+5. If no STL is loaded and the first operation is flatten, prompt for manual stock size entry.
+6. Generate and preview toolpath/simulation for the selected operation only.
+7. “Generate” and “Export G-code” buttons apply only to the selected operation.
+8. Add checklist/SD card export for the full operation sequence.
+9. (Optional) Each operation updates the stock state for the next operation in the sequence.
+
+## Tool Definition and Stock Simulation
 
 - [x] Minimal tool definition (object with diameter and type, e.g. flat)
   - [x] Add tool data structure (e.g. { diameter: number, type: 'flat' })
@@ -79,16 +91,20 @@
 
 ## Flatten Operation Workflow
 
-- [ ] **Flatten operation** (first-class workflow step)
-  - [ ] User can select "Flatten" as an operation (standalone or as first step in multi-part jobs)
-  - [ ] User specifies area to flatten (entire top or X/Y min/max region)
-  - [ ] User sets flatten depth (single or multi-pass)
-  - [ ] User sets tool, step-over, feedrate, safe Z, etc.
-  - [ ] App generates raster toolpath at constant Z for flattening
-  - [ ] Simulate result: update stock heightmap to new flat surface
-  - [ ] Export G-code for flatten operation
+- [x] **Flatten operation** (first-class workflow step)
+  - [x] User can select "Flatten" as an operation (standalone or as first step in multi-part jobs)
+  - [x] User sets flatten depth (single pass for now)
+  - [x] User sets tool, step-over, etc.
+  - [x] App generates raster toolpath at constant Z for flattening
+  - [x] Simulate result: update stock heightmap to new flat surface
+  - [x] Export G-code for flatten operation
+  - [ ] Area selection (entire top or X/Y min/max region)
+  - [ ] Multi-pass flattening (if depth > tool's max cut)
   - [ ] After flatten, new "top" is reference for subsequent ops
   - [ ] Integrate with multi-part workflow (flatten, flip, mill, etc.)
+  - [ ] Flatten works with or without STL loaded (user can set stock or flatten area manually)
+  - [ ] Flatten toolpath extends beyond edges of material to avoid edge artifacts
+  - [ ] Generate button applies flatten operation only (not carve) when flatten is selected
 
 ## Multi-Part Workflow (Planned)
 
@@ -106,6 +122,28 @@
 - [ ] Checklist includes user instructions for each step (tool changes, flips, zeroing, etc.)
 - [ ] User can print or save the checklist for shop use
 - [ ] Can simulate steps in the UI
+
+## Operation Creation Workflow
+
+1. Launch the application; workspace and control panel are visible.
+2. Set up stock:
+   - Option A: Load an STL file (for 3D model jobs).
+   - Option B: Manually enter stock dimensions (width, height, thickness) if no STL is loaded, for flattening or facing.
+3. Pick or add an operation:
+   - User sees a list of available operations (Flatten, Carve, Drill, Flip, etc.).
+   - Click “Add Operation” and select the type; operation is added to a sequence (can reorder/remove).
+4. Configure operation parameters:
+   - For the selected operation, set parameters (area, depth, tool, feedrate, etc.).
+   - UI shows only relevant fields for the chosen operation.
+5. Preview & simulate:
+   - Preview toolpath and simulated result for the operation.
+   - Toggle visibility of each operation’s result.
+6. Generate & export G-code:
+   - Generate G-code for each operation; export individually or as a set for SD card.
+7. Print/export checklist:
+   - App generates a printable checklist for the workflow (step-by-step shop instructions).
+8. (Optional) Multi-part workflow:
+   - Add multiple operations in sequence; each updates the stock state for the next.
 
 ## UX / UI
 - [ ] Group controls (file input, export, settings) in a unified panel or toolbar

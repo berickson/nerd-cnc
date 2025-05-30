@@ -26,6 +26,48 @@ function compute_linewidth(box: THREE.Box3): number {
   return Math.max(diagonal * 0.005, 0.000002);
 }
 
+// Define operation types for type safety
+// (Place near the top, after imports)
+type StockOperation = {
+  type: 'stock',
+  params: {
+    width: number,
+    height: number,
+    thickness: number
+  }
+};
+type CarveOperation = {
+  type: 'carve',
+  params: {
+    tool: {
+      cutter_diameter: number,
+      shank_diameter: number,
+      overall_length: number,
+      length_of_cut: number,
+      type: string,
+      v_angle: number
+    },
+    step_over_percent: number,
+    toolpath_grid_resolution: number
+  }
+};
+type FlattenOperation = {
+  type: 'flatten',
+  params: {
+    flatten_depth: number,
+    tool: {
+      cutter_diameter: number,
+      shank_diameter: number,
+      overall_length: number,
+      length_of_cut: number,
+      type: string,
+      v_angle: number
+    },
+    step_over_percent: number
+  }
+};
+type Operation = StockOperation | CarveOperation | FlattenOperation;
+
 const StartPage: React.FC = () => {
 
   //////////////////////////////////////////////////////////
@@ -48,7 +90,7 @@ const StartPage: React.FC = () => {
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
   const [show_wireframe, set_show_wireframe] = React.useState(false);
   const [show_stock, set_show_stock] = React.useState(true);
-  const [show_initial_stock, set_show_initial_stock] = React.useState(false); // Add state for initial stock visibility
+  const [show_initial_stock, set_show_initial_stock] = React.useState(true); // Add state for initial stock visibility
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
   const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
   const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
@@ -77,6 +119,15 @@ const StartPage: React.FC = () => {
   const [flatten_depth, set_flatten_depth] = React.useState(5); // mm, default flatten depth
   const [generating_flatten, set_generating_flatten] = React.useState(false);
   const [flatten_toolpath, set_flatten_toolpath] = React.useState<any>(null);
+
+  // Operation-driven workflow state
+  const [operations, set_operations] = React.useState<Operation[]>([
+    { type: 'carve', params: { tool: { ...tool }, step_over_percent, toolpath_grid_resolution } }
+  ]);
+  const [selected_operation_index, set_selected_operation_index] = React.useState(0);
+
+  // Track if stock is defined (STL loaded or manual stock entry)
+  const [stock_defined, set_stock_defined] = React.useState(false);
 
   //////////////////////////////////////////////////////////
   // effects
@@ -455,7 +506,54 @@ const StartPage: React.FC = () => {
   }
 
   function handle_generate() {
-    if (!stl_geometry || !box_bounds) return;
+    if (!box_bounds) return;
+    const selected_op = operations[selected_operation_index];
+    if (selected_op?.type === 'flatten') {
+      // Generate flatten toolpath for the selected flatten operation
+      set_generating_flatten(true);
+      const min_x = box_bounds.min.x;
+      const max_x = box_bounds.max.x;
+      const min_y = box_bounds.min.y;
+      const max_y = box_bounds.max.y;
+      const z = box_bounds.max.z - selected_op.params.flatten_depth;
+      const step_over = selected_op.params.tool.cutter_diameter * selected_op.params.step_over_percent;
+      const toolpath: { x: number; y: number; z: number }[] = [];
+      let reverse = false;
+      for (let y = min_y; y <= max_y; y += step_over) {
+        const line: { x: number; y: number; z: number }[] = [];
+        for (let x = min_x; x <= max_x; x += step_over / 2) {
+          line.push({ x, y, z });
+        }
+        if (reverse) line.reverse();
+        toolpath.push(...line);
+        reverse = !reverse;
+      }
+      set_flatten_toolpath(toolpath);
+      // Simulate material removal for flatten toolpath and update carved result
+      // Create a stock object matching the current box_bounds
+      const size = new THREE.Vector3();
+      size.subVectors(box_bounds.max, box_bounds.min);
+      const grid_cells_x = 100; // reasonable default for flatten
+      const grid_cells_y = 100;
+      const stock = create_heightmap_stock(
+        size.x,
+        size.y,
+        grid_cells_x,
+        grid_cells_y,
+        box_bounds.max.z,
+        box_bounds.min.x,
+        box_bounds.min.y
+      );
+      simulate_material_removal(stock, selected_op.params.tool, toolpath);
+      window.current_heightmap = stock;
+      set_stock_update_counter((c: number) => c + 1);
+      set_show_stock(false);
+      setTimeout(() => set_show_stock(true), 0);
+      set_generating_flatten(false);
+      set_simulation_dirty(false);
+      return;
+    }
+    if (!stl_geometry) return;
     set_generating(true); // Disable button instantly
     set_simulation_dirty(false); // Mark as not dirty
     set_generate_timings(null);
@@ -474,7 +572,7 @@ const StartPage: React.FC = () => {
 
       if (tool.cutter_diameter <= required_tool_size) {
         set_tool_error(
-          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2} mm). Increase the tool size or grid resolution for better results.`
+          `Tool cutter diameter (${tool.cutter_diameter} mm) is smaller than or equal to the minimum grid cell size with margin (${required_tool_size.toFixed(2)} mm). Increase the tool size or grid resolution for better results.`
         );
         set_generating(false);
         return;
@@ -643,11 +741,56 @@ const StartPage: React.FC = () => {
         boxHelper.userData.is_bounding_box = true;
         boxHelper.visible = show_bounding_box;
         scene_ref.current!.add(boxHelper);
+        // Fit camera to bounding box and set Z-up
+        if (camera_ref.current && controls_ref.current) {
+          camera_ref.current.up.set(0, 0, 1); // Z axis up
+          fit_camera_to_object(camera_ref.current, controls_ref.current, box);
+        }
       }
       set_simulation_dirty(true);
+      set_stock_defined(true);
     };
     reader.readAsArrayBuffer(file);
   };
+
+  // Handler for starting with blank/manual stock
+  function handle_start_blank_stock() {
+    // Add a stock operation as the first operation with default size
+    const default_stock: StockOperation = {
+      type: 'stock',
+      params: {
+        width: 100,
+        height: 100,
+        thickness: 20
+      }
+    };
+    set_operations([default_stock]);
+    set_selected_operation_index(0);
+    set_stock_defined(true);
+    const min = new THREE.Vector3(0, 0, 0);
+    const max = new THREE.Vector3(100, 100, 20);
+    set_box_bounds({ min, max });
+    set_box_size(new THREE.Vector3(100, 100, 20));
+    set_stl_geometry(null); // No STL loaded
+    set_simulation_dirty(true);
+    // Add bounding box helper for blank stock
+    if (scene_ref.current) {
+      // Remove any previous bounding box
+      scene_ref.current!.children
+        .filter(obj => obj.userData && obj.userData.is_bounding_box)
+        .forEach(obj => scene_ref.current!.remove(obj));
+      const box = new THREE.Box3(min.clone(), max.clone());
+      const boxHelper = new THREE.Box3Helper(box, 0xff0000);
+      boxHelper.userData.is_bounding_box = true;
+      boxHelper.visible = show_bounding_box;
+      scene_ref.current!.add(boxHelper);
+      // Fit camera to bounding box and set Z-up
+      if (camera_ref.current && controls_ref.current) {
+        camera_ref.current.up.set(0, 0, 1); // Z axis up
+        fit_camera_to_object(camera_ref.current, controls_ref.current, box);
+      }
+    }
+  }
 
   //////////////////////////////////////////////////////////
   // Add effect to render/remove the initial stock block
@@ -677,9 +820,9 @@ const StartPage: React.FC = () => {
     }
   }, [show_initial_stock, box_bounds]);
 
-  // Flatten operation effect: generate toolpath for flattening
+  // Flatten operation effects: generate toolpath for flattening
   useEffect(() => {
-    if (!scene_ref.current || !box_bounds || !stl_geometry) return;
+    if (!scene_ref.current || !box_bounds) return;
     const scene = scene_ref.current;
 
     // Remove previous flatten toolpath lines
@@ -736,6 +879,26 @@ const StartPage: React.FC = () => {
       reverse = !reverse;
     }
     set_flatten_toolpath(toolpath);
+    // Simulate material removal for flatten toolpath and update carved result
+    // Create a stock object matching the current box_bounds
+    const size = new THREE.Vector3();
+    size.subVectors(box_bounds.max, box_bounds.min);
+    const grid_cells_x = 100; // reasonable default for flatten
+    const grid_cells_y = 100;
+    const stock = create_heightmap_stock(
+      size.x,
+      size.y,
+      grid_cells_x,
+      grid_cells_y,
+      box_bounds.max.z,
+      box_bounds.min.x,
+      box_bounds.min.y
+    );
+    simulate_material_removal(stock, tool, toolpath);
+    window.current_heightmap = stock;
+    set_stock_update_counter((c: number) => c + 1);
+    set_show_stock(false);
+    setTimeout(() => set_show_stock(true), 0);
     set_generating_flatten(false);
   }
 
@@ -754,257 +917,661 @@ const StartPage: React.FC = () => {
     URL.revokeObjectURL(url);
   }
 
+  // Add effect to update bounding box helper when box_bounds changes
+  useEffect(() => {
+    if (!scene_ref.current || !box_bounds) return;
+    // Remove any previous bounding box
+    scene_ref.current.children
+      .filter(obj => obj.userData && obj.userData.is_bounding_box)
+      .forEach(obj => scene_ref.current!.remove(obj));
+    // Add new bounding box helper
+    const box = new THREE.Box3(box_bounds.min.clone(), box_bounds.max.clone());
+    const boxHelper = new THREE.Box3Helper(box, 0xff0000);
+    boxHelper.userData.is_bounding_box = true;
+    boxHelper.visible = show_bounding_box;
+    scene_ref.current.add(boxHelper);
+  }, [box_bounds, show_bounding_box]);
+
+  // Section: tool effect: show the tool in the 3D scene whenever tool parameters or bounding box change
+  useEffect(() => {
+    if (!scene_ref.current) return;
+    // Get the tool for the selected operation (skip if stock op)
+    const op = operations[selected_operation_index];
+    let op_tool = null;
+    if (op && op.type === 'carve' && op.params.tool) {
+      op_tool = op.params.tool;
+    } else if (op && op.type === 'flatten' && op.params.tool) {
+      op_tool = op.params.tool;
+    }
+    // Remove previous tool mesh if present
+    if (tool_mesh_ref.current) {
+      scene_ref.current.remove(tool_mesh_ref.current);
+      tool_mesh_ref.current = null;
+    }
+    // Only show tool if box_bounds and op_tool are defined
+    if (!box_bounds || !op_tool) return;
+    // Place the tool at the top-front-left of the bounding box (min.x, max.y, max.z)
+    const tool_position = new THREE.Vector3(
+      box_bounds.min.x,
+      box_bounds.max.y,
+      box_bounds.max.z
+    );
+    // CNC convention: Z up, so rotate tool to point down -Y (Three.js default is Y up)
+    const tool_rotation = new THREE.Euler(Math.PI / 2, 0, 0);
+
+    // Create a group for the tool
+    const tool_group = new THREE.Group();
+    // Cutter (lower part)
+    let cutter_geometry;
+    if (op_tool.type === 'ball') {
+      // Ball-nose: cylinder + hemisphere
+      const cyl_height = Math.max(op_tool.length_of_cut - op_tool.cutter_diameter / 2, 0.001);
+      const cyl_geom = new THREE.CylinderGeometry(
+        op_tool.cutter_diameter / 2,
+        op_tool.cutter_diameter / 2,
+        cyl_height,
+        32
+      );
+      cyl_geom.translate(0, cyl_height / 2 + op_tool.cutter_diameter / 2, 0);
+      const sphere_geom = new THREE.SphereGeometry(
+        op_tool.cutter_diameter / 2,
+        32,
+        16,
+        0,
+        Math.PI * 2,
+        -Math.PI,
+        Math.PI / 2
+      );
+      sphere_geom.translate(0, op_tool.cutter_diameter/2,0); // hemisphere at base
+      cutter_geometry = BufferGeometryUtils.mergeGeometries([
+        cyl_geom,
+        sphere_geom
+      ]) as THREE.BufferGeometry;
+      cutter_geometry.computeVertexNormals();
+    } else if (op_tool.type === 'vbit') {
+      // V-bit: cone with correct V angle + cylinder for length_of_cut
+      const radius = op_tool.cutter_diameter / 2;
+      const v_angle_rad = op_tool.v_angle * Math.PI / 180;
+      const cone_height = radius / Math.tan(v_angle_rad / 2);
+      const cone_geom = new THREE.ConeGeometry(
+        radius,
+        cone_height,
+        64
+      );
+      cone_geom.rotateX(Math.PI);
+      cone_geom.translate(0, -(op_tool.length_of_cut / 2 - cone_height / 2), 0);
+      let cutter_geoms: THREE.BufferGeometry[] = [cone_geom];
+      if (op_tool.length_of_cut > cone_height) {
+        const base_cyl_geom = new THREE.CylinderGeometry(
+          op_tool.cutter_diameter / 2,
+          op_tool.cutter_diameter / 2,
+          op_tool.length_of_cut - cone_height,
+          32
+        );
+        base_cyl_geom.translate(0, (op_tool.length_of_cut - cone_height) / 2, 0);
+        cutter_geoms.push(base_cyl_geom);
+      }
+      cutter_geometry = BufferGeometryUtils.mergeGeometries(cutter_geoms) as THREE.BufferGeometry;
+      cutter_geometry.computeVertexNormals();
+    } else {
+      // Flat endmill: just a cylinder
+      cutter_geometry = new THREE.CylinderGeometry(
+        op_tool.cutter_diameter / 2,
+        op_tool.cutter_diameter / 2,
+        op_tool.length_of_cut,
+        32
+      );
+      cutter_geometry.translate(0, op_tool.length_of_cut / 2, 0);
+    }
+    const cutter_material = new THREE.MeshPhongMaterial({ color: 0xe0e0e0, side: THREE.DoubleSide });
+    const cutter_mesh = new THREE.Mesh(cutter_geometry, cutter_material);
+    tool_group.add(cutter_mesh);
+    // Shank (upper part)
+    const shank_length = Math.max(op_tool.overall_length - op_tool.length_of_cut, 0.0001);
+    const shank_geometry = new THREE.CylinderGeometry(
+      op_tool.shank_diameter / 2,
+      op_tool.shank_diameter / 2,
+      shank_length,
+      32
+    );
+    shank_geometry.translate(0, op_tool.length_of_cut + shank_length / 2, 0);
+    const shank_material = new THREE.MeshPhongMaterial({ color: 0x2196f3 });
+    const shank_mesh = new THREE.Mesh(shank_geometry, shank_material);
+    tool_group.add(shank_mesh);
+    tool_group.position.copy(tool_position);
+    tool_group.rotation.copy(tool_rotation);
+    tool_group.userData.is_tool_visual = true;
+    scene_ref.current.add(tool_group);
+    tool_mesh_ref.current = tool_group;
+  }, [operations, selected_operation_index, box_bounds, scene_ref.current]);
+
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
       {/* Control Panel */}
       <div className="control-panel" style={{ position: 'absolute', top: 20, left: 20, zIndex: 20 }}>
-        {/* File Section */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>File</div>
-          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%' }} />
+        {/* Logo and Welcome/Instructions */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 24 }}>
+          <img src="/assets/robonerd-robot-logo-light.svg" alt="RoboNerd Logo" style={{ width: 80, height: 80, marginBottom: 12, filter: 'drop-shadow(0 2px 8px #0006)' }} />
+          {!stock_defined && (
+            <div style={{ color: '#eee', fontSize: '1.15em', textAlign: 'center', marginBottom: 12, lineHeight: 1.4 }}>
+              <strong>Welcome!</strong><br />
+              <span style={{ fontWeight: 400 }}>
+                Load a 3D model (STL) or start with blank stock to begin.<br />
+                <span style={{ color: '#aaa', fontSize: '0.98em' }}>
+                  You can adjust toolpaths, simulation, and export options after defining your stock.
+                </span>
+              </span>
+            </div>
+          )}
         </div>
-        {/* Export Section */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Export</div>
-          <button style={{ width: '100%' }} onClick={handle_export_gcode}>Export G-code</button>
+        {/* File Section (always visible) */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
+          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
+          <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
+            Start with Blank Stock
+          </button>
         </div>
-        {/* Calculation Parameters Section */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            Toolpath Grid Resolution
-            <input
-              type="number"
-              min={20}
-              max={1000}
-              step={10}
-              value={toolpath_grid_resolution}
-              onChange={e => {
-                set_toolpath_grid_resolution(Number(e.target.value));
-                set_simulation_dirty(true);
-              }}
-              style={{ width: 80, marginLeft: 8 }}
-            />
-          </label>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            Tool Step Over (% of Cutter Diameter)
-            <input
-              type="number"
-              min={0.05}
-              max={1.0}
-              step={0.01}
-              value={step_over_percent}
-              onChange={e => {
-                set_step_over_percent(Number(e.target.value));
-                set_simulation_dirty(true);
-              }}
-              style={{ width: 80, marginLeft: 8 }}
-            />
-            <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
-              (lower = smoother, slower)
-            </span>
-          </label>
-        </div>
-        {/* Tool Section */}
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Tool</div>
-          <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label>
-              Cutter Diameter
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={tool.cutter_diameter}
-                onChange={e => {
-                  const v = parseFloat(e.target.value);
-                  set_tool(t => ({ ...t, cutter_diameter: v }));
-                  set_simulation_dirty(true);
-                }}
-              />
-              mm
-            </label>
-            <label>
-              Shank Diameter
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={tool.shank_diameter}
-                onChange={e => {
-                  const v = parseFloat(e.target.value);
-                  set_tool(t => ({ ...t, shank_diameter: v }));
-                  set_simulation_dirty(true);
-                }}
-              />
-              mm
-            </label>
-            <label>
-              Overall Length
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={tool.overall_length}
-                onChange={e => {
-                  const v = parseFloat(e.target.value);
-                  set_tool(t => ({ ...t, overall_length: v }));
-                  set_simulation_dirty(true);
-                }}
-              />
-              mm
-            </label>
-            <label>
-              Length of Cut
-              <input
-                type="number"
-                min="0.1"
-                step="0.1"
-                value={tool.length_of_cut}
-                onChange={e => {
-                  const v = parseFloat(e.target.value);
-                  set_tool(t => ({ ...t, length_of_cut: v }));
-                  set_simulation_dirty(true);
-                }}
-              />
-              mm
-            </label>
-            <label>
-              Type
-              <select
-                value={tool.type}
-                onChange={e => {
-                  const new_type = e.target.value;
-                  if (new_type === 'vbit') {
-                    set_tool(t => ({ ...t, type: new_type, v_angle: t.v_angle || 60 }));
-                  } else {
-                    set_tool(t => ({ ...t, type: new_type, v_angle: 60 }));
-                  }
-                  set_simulation_dirty(true);
-                }}
-              >
-                <option value="flat">Flat</option>
-                <option value="ball">Ball</option>
-                <option value="vbit">V-bit</option>
-              </select>
-            </label>
-            {/* Show v_angle input only for vbit */}
-            {tool.type === 'vbit' && (
-              <label>
-                V Angle
+        {/* Hide all other controls until stock is defined */}
+        {stock_defined && (
+          <>
+            {/* Export Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Export</div>
+              <button style={{ width: '100%' }} onClick={handle_export_gcode}>Export G-code</button>
+            </div>
+            {/* Calculation Parameters Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                Toolpath Grid Resolution
                 <input
                   type="number"
-                  min="10"
-                  max="170"
-                  step="1"
-                  value={tool.v_angle}
+                  min={20}
+                  max={1000}
+                  step={10}
+                  value={toolpath_grid_resolution}
                   onChange={e => {
-                    const v = parseFloat(e.target.value);
-                    set_tool(t => ({ ...t, v_angle: v }));
+                    set_toolpath_grid_resolution(Number(e.target.value));
                     set_simulation_dirty(true);
                   }}
+                  style={{ width: 80, marginLeft: 8 }}
                 />
-                °
               </label>
-            )}
-            {tool_error && <div style={{ color: 'red' }}>{tool_error}</div>}
-          </form>
-          <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
-          {generate_timings && (
-            <div style={{ marginTop: 8, color: '#aaa', fontSize: '0.95em' }}>
-              <div><strong>Timing (ms):</strong></div>
-              <div>Validation: {generate_timings.validation?.toFixed(1)}</div>
-              <div>Heightmap: {generate_timings.heightmap?.toFixed(1)}</div>
-              <div>Toolpath: {generate_timings.toolpath?.toFixed(1)}</div>
-              <div>Simulation: {generate_timings.simulation?.toFixed(1)}</div>
-              <div>Mesh update: {generate_timings.mesh_update?.toFixed(1)}</div>
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                Tool Step Over (% of Cutter Diameter)
+                <input
+                  type="number"
+                  min={0.05}
+                  max={1.0}
+                  step={0.01}
+                  value={step_over_percent}
+                  onChange={e => {
+                    set_step_over_percent(Number(e.target.value));
+                    set_simulation_dirty(true);
+                  }}
+                  style={{ width: 80, marginLeft: 8 }}
+                />
+                <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
+                  (lower = smoother, slower)
+                </span>
+              </label>
             </div>
-          )}
-          {/* If window.last_simulation_timings is set, show it below the main timings */}
-          {typeof window !== 'undefined' && window.last_simulation_timings && (
-            <div style={{ marginTop: 4, color: '#aaa', fontSize: '0.9em' }}>
-              <div><strong>Simulation details:</strong></div>
-              <div>Tool grid: {window.last_simulation_timings.tool_grid?.toFixed(1)} ms</div>
-              <div>Toolpath loop: {window.last_simulation_timings.toolpath_loop?.toFixed(1)} ms</div>
-              <div>Grid updates: {window.last_simulation_timings.grid_updates}</div>
-              <div>Total (JS only): {window.last_simulation_timings.total?.toFixed(1)} ms</div>
-            </div>
-          )}
-        </div>
-        {/* Visibility Section */}
-        <div>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
-          {/* Show/hide the original STL model, with option for wireframe */}
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
-            Show STL Model
-          </label>
-          {show_mesh && (
-            <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-              <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
-              Show as Wireframe
-            </label>
-          )}
-          {/* Show/hide the initial stock block (transparent) */}
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_initial_stock} onChange={e => set_show_initial_stock(e.target.checked)} />{' '}
-            Show Stock (Initial Block)
-          </label>
-          {/* Show/hide the carved result (simulated stock), with option for wireframe */}
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
-            Show Carved Result
-          </label>
-          {show_stock && (
-            <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-              <input type="checkbox" checked={show_stock_wireframe} onChange={e => set_show_stock_wireframe(e.target.checked)} />{' '}
-              Show as Wireframe
-            </label>
-          )}
-          {/* Show/hide the toolpath lines */}
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
-            Show Toolpath
-          </label>
-          {/* Show/hide the bounding box */}
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
-            Show Bounding Box
-          </label>
-          {/* Bounding Box Info and Controls */}
-          <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
-            <div>
-              <strong>Bounding Box:</strong>{' '}
-              {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <strong>3D Controls:</strong>
-              <div>
-                Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
-                Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
-                Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+            {/* Visibility Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
+              {/* Show/hide the original STL model, with option for wireframe */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
+                Show STL Model
+              </label>
+              {show_mesh && (
+                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                  <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+                  Show as Wireframe
+                </label>
+              )}
+              {/* Show/hide the initial stock block (transparent) */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_initial_stock} onChange={e => set_show_initial_stock(e.target.checked)} />{' '}
+                Show Stock (Initial Block)
+              </label>
+              {/* Show/hide the carved result (simulated stock), with option for wireframe */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
+                Show Carved Result
+              </label>
+              {show_stock && (
+                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                  <input type="checkbox" checked={show_stock_wireframe} onChange={e => set_show_stock_wireframe(e.target.checked)} />{' '}
+                  Show as Wireframe
+                </label>
+              )}
+              {/* Show/hide the toolpath lines */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
+                Show Toolpath
+              </label>
+              {/* Show/hide the bounding box */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
+                Show Bounding Box
+              </label>
+              {/* Bounding Box Info and Controls */}
+              <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
+                <div>
+                  <strong>Bounding Box:</strong>{' '}
+                  {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <strong>3D Controls:</strong>
+                  <div>
+                    Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
+                    Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
+                    Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-        {/* Flatten Operation Section */}
-        <div style={{ marginBottom: 16, border: '1px solid #444', borderRadius: 4, padding: 8 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Flatten Operation</div>
-          <label style={{ display: 'block', marginBottom: 4 }}>
-            Flatten Depth
-            <input
-              type="number"
-              min={0.01}
-              step={0.01}
-              value={flatten_depth}
-              onChange={e => set_flatten_depth(Number(e.target.value))}
-              style={{ width: 80, marginLeft: 8 }}
-            />
-            mm
-          </label>
-          <button style={{ width: '100%' }} onClick={handle_flatten_generate} disabled={generating_flatten}>Generate Flatten Toolpath</button>
-          <button style={{ width: '100%', marginTop: 4 }} onClick={handle_export_flatten_gcode} disabled={!flatten_toolpath || flatten_toolpath.length === 0}>Export Flatten G-code</button>
-        </div>
+          </>
+        )}
+        {/* Divider and operations panel (already stock_defined-gated below) */}
+        {stock_defined && (
+          <hr style={{ border: 0, borderTop: '1px solid #444', margin: '16px 0' }} />
+        )}
+        {/* Show operations and per-operation controls only if stock is defined */}
+        {stock_defined ? (
+          <>
+            {/* Operations Section */}
+            <div style={{ marginBottom: 16, border: '1px solid #444', borderRadius: 4, padding: 8 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Operations</div>
+              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                {operations.map((op, idx) => (
+                  <li
+                    key={idx}
+                    style={{
+                      background: idx === selected_operation_index ? '#333' : 'transparent',
+                      color: idx === selected_operation_index ? '#fff' : '#ccc',
+                      padding: '4px 8px',
+                      borderRadius: 3,
+                      cursor: 'pointer',
+                      marginBottom: 2
+                    }}
+                    onClick={() => set_selected_operation_index(idx)}
+                  >
+                    {op.type.charAt(0).toUpperCase() + op.type.slice(1)}
+                  </li>
+                ))}
+              </ul>
+              <button
+                style={{ width: '100%', marginTop: 6 }}
+                onClick={() => set_operations([
+                  ...operations,
+                  {
+                    type: 'carve',
+                    params: {
+                      tool: { ...tool },
+                      step_over_percent,
+                      toolpath_grid_resolution
+                    }
+                  } as CarveOperation
+                ])}
+              >
+                + Add Carve Operation
+              </button>
+              <button
+                style={{ width: '100%', marginTop: 6 }}
+                onClick={() => set_operations([
+                  ...operations,
+                  {
+                    type: 'flatten',
+                    params: {
+                      flatten_depth,
+                      tool: { ...tool },
+                      step_over_percent
+                    }
+                  } as FlattenOperation
+                ])}
+              >
+                + Add Flatten Operation
+              </button>
+            </div>
+            {/* Selected Operation Parameters Section */}
+            <div style={{ marginBottom: 16, border: '1px solid #444', borderRadius: 4, padding: 8 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Selected Operation Parameters</div>
+              {/* Tool Section (per operation) */}
+              <form onSubmit={e => e.preventDefault()} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {/* Only show tool controls for the selected operation */}
+                {operations[selected_operation_index]?.type === 'carve' && (() => {
+                  const op = operations[selected_operation_index] as CarveOperation;
+                  return (
+                    <>
+                      <label>
+                        Cutter Diameter
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.cutter_diameter}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, cutter_diameter: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Shank Diameter
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.shank_diameter}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, shank_diameter: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Overall Length
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.overall_length}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, overall_length: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Length of Cut
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.length_of_cut}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, length_of_cut: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Type
+                        <select
+                          value={op.params.tool.type}
+                          onChange={e => {
+                            const new_type = e.target.value;
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, type: new_type, v_angle: new_type === 'vbit' ? (op2.params.tool.v_angle || 60) : 60 } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        >
+                          <option value="flat">Flat</option>
+                          <option value="ball">Ball</option>
+                          <option value="vbit">V-bit</option>
+                        </select>
+                      </label>
+                      {op.params.tool.type === 'vbit' && (
+                        <label>
+                          V Angle
+                          <input
+                            type="number"
+                            min="10"
+                            max="170"
+                            step="1"
+                            value={op.params.tool.v_angle}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              set_operations(ops => ops.map((op2, idx) =>
+                                idx === selected_operation_index && op2.type === 'carve'
+                                  ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, v_angle: v } } }
+                                  : op2
+                              ));
+                              set_simulation_dirty(true);
+                            }}
+                          />
+                          °
+                        </label>
+                      )}
+                    </>
+                  );
+                })()}
+                {/* Flatten operation parameters (flatten_depth, tool, step_over_percent) */}
+                {operations[selected_operation_index]?.type === 'flatten' && (() => {
+                  const op = operations[selected_operation_index] as FlattenOperation;
+                  return (
+                    <>
+                      <label>
+                        Flatten Depth
+                        <input
+                          type="number"
+                          min={0.01}
+                          step={0.01}
+                          value={op.params.flatten_depth}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, flatten_depth: v } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Cutter Diameter
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.cutter_diameter}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, cutter_diameter: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Shank Diameter
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.shank_diameter}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, shank_diameter: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Overall Length
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.overall_length}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, overall_length: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Length of Cut
+                        <input
+                          type="number"
+                          min="0.1"
+                          step="0.1"
+                          value={op.params.tool.length_of_cut}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, length_of_cut: v } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        mm
+                      </label>
+                      <label>
+                        Type
+                        <select
+                          value={op.params.tool.type}
+                          onChange={e => {
+                            const new_type = e.target.value;
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, type: new_type, v_angle: new_type === 'vbit' ? (op2.params.tool.v_angle || 60) : 60 } } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        >
+                          <option value="flat">Flat</option>
+                          <option value="ball">Ball</option>
+                          <option value="vbit">V-bit</option>
+                        </select>
+                      </label>
+                      {op.params.tool.type === 'vbit' && (
+                        <label>
+                          V Angle
+                          <input
+                            type="number"
+                            min="10"
+                            max="170"
+                            step="1"
+                            value={op.params.tool.v_angle}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              set_operations(ops => ops.map((op2, idx) =>
+                                idx === selected_operation_index && op2.type === 'flatten'
+                                  ? { ...op2, params: { ...op2.params, tool: { ...op2.params.tool, v_angle: v } } }
+                                  : op2
+                              ));
+                              set_simulation_dirty(true);
+                            }}
+                          />
+                          °
+                        </label>
+                      )}
+                      <label>
+                        Step Over (% of Cutter Diameter)
+                        <input
+                          type="number"
+                          min={0.05}
+                          max={1.0}
+                          step={0.01}
+                          value={op.params.step_over_percent}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, step_over_percent: v } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                      </label>
+                    </>
+                  );
+                })()}
+              </form>
+              <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
+              {generate_timings && (
+                <div style={{ marginTop: 8, color: '#aaa', fontSize: '0.95em' }}>
+                  <div><strong>Timing (ms):</strong></div>
+                  <div>Validation: {generate_timings.validation?.toFixed(1)}</div>
+                  <div>Heightmap: {generate_timings.heightmap?.toFixed(1)}</div>
+                  <div>Toolpath: {generate_timings.toolpath?.toFixed(1)}</div>
+                  <div>Simulation: {generate_timings.simulation?.toFixed(1)}</div>
+                  <div>Mesh update: {generate_timings.mesh_update?.toFixed(1)}</div>
+                </div>
+              )}
+              {/* If window.last_simulation_timings is set, show it below the main timings */}
+              {typeof window !== 'undefined' && window.last_simulation_timings && (
+                <div style={{ marginTop: 4, color: '#aaa', fontSize: '0.9em' }}>
+                  <div><strong>Simulation details:</strong></div>
+                  <div>Tool grid: {window.last_simulation_timings.tool_grid?.toFixed(1)} ms</div>
+                  <div>Toolpath loop: {window.last_simulation_timings.toolpath_loop?.toFixed(1)} ms</div>
+                  <div>Grid updates: {window.last_simulation_timings.grid_updates}</div>
+                  <div>Total (JS only): {window.last_simulation_timings.total?.toFixed(1)} ms</div>
+                </div>
+              )}
+            </div>
+            {/* Flatten Operation Section */}
+            <div style={{ marginBottom: 16, border: '1px solid #444', borderRadius: 4, padding: 8 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Flatten Operation</div>
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                Flatten Depth
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.01}
+                  value={flatten_depth}
+                  onChange={e => set_flatten_depth(Number(e.target.value))}
+                  style={{ width: 80, marginLeft: 8 }}
+                />
+                mm
+              </label>
+              <button style={{ width: '100%' }} onClick={handle_flatten_generate} disabled={generating_flatten}>Generate Flatten Toolpath</button>
+              <button style={{ width: '100%', marginTop: 4 }} onClick={handle_export_flatten_gcode} disabled={!flatten_toolpath || flatten_toolpath.length === 0}>Export Flatten G-code</button>
+            </div>
+          </>
+        ) : null}
       </div>
       <div ref={mount_ref} style={{ width: '100vw', height: '100vh' }} />
     </div>
