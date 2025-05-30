@@ -1053,14 +1053,16 @@ const StartPage: React.FC = () => {
             </div>
           )}
         </div>
-        {/* File Section (always visible) */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
-          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
-          <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
-            Start with Blank Stock
-          </button>
-        </div>
+        {/* File Section (only visible before stock is defined) */}
+        {!stock_defined && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
+            <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
+            <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
+              Start with Blank Stock
+            </button>
+          </div>
+        )}
         {/* Hide all other controls until stock is defined */}
         {stock_defined && (
           <>
