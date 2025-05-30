@@ -93,7 +93,7 @@ const StartPage: React.FC = () => {
   const [show_initial_stock, set_show_initial_stock] = React.useState(true); // Add state for initial stock visibility
   const stock_mesh_ref = useRef<THREE.Mesh | null>(null);
   const [step_over_percent, set_step_over_percent] = React.useState(0.7); // default 70% of cutter diameter
-  const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(200); // default 200
+  const [toolpath_grid_resolution, set_toolpath_grid_resolution] = React.useState(2000); // default 2000
   const [simulation_dirty, set_simulation_dirty] = React.useState(false);
   const [generating, set_generating] = React.useState(false); // true while simulation is running
 
@@ -116,7 +116,7 @@ const StartPage: React.FC = () => {
   const [show_stock_wireframe, set_show_stock_wireframe] = React.useState(false);
 
   // Flatten operation states
-  const [flatten_depth, set_flatten_depth] = React.useState(5); // mm, default flatten depth
+  const [flatten_depth, set_flatten_depth] = React.useState(1); // mm, default flatten depth
   const [generating_flatten, set_generating_flatten] = React.useState(false);
   const [flatten_toolpath, set_flatten_toolpath] = React.useState<any>(null);
 
@@ -1069,22 +1069,20 @@ const StartPage: React.FC = () => {
             </div>
           )}
         </div>
-        {/* File Section (always visible) */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
-          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
-          <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
-            Start with Blank Stock
-          </button>
-        </div>
+        {/* File Section (only show if not yet defined) */}
+        {!stock_defined && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
+            <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
+            <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
+              Start with Blank Stock
+            </button>
+          </div>
+        )}
         {/* Hide all other controls until stock is defined */}
         {stock_defined && (
           <>
-            {/* Export Section */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Export</div>
-              <button style={{ width: '100%' }} onClick={handle_export_gcode}>Export G-code</button>
-            </div>
+            {/* Export Section (removed, now per-operation) */}
             {/* Calculation Parameters Section */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
@@ -1125,16 +1123,20 @@ const StartPage: React.FC = () => {
             {/* Visibility Section */}
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
-              {/* Show/hide the original STL model, with option for wireframe */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
-                Show STL Model
-              </label>
-              {show_mesh && (
-                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-                  <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
-                  Show as Wireframe
-                </label>
+              {/* Show/hide the original STL model, with option for wireframe, only if STL is loaded */}
+              {stl_geometry && (
+                <>
+                  <label style={{ display: 'block', marginBottom: 4 }}>
+                    <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
+                    Show STL Model
+                  </label>
+                  {show_mesh && (
+                    <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                      <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+                      Show as Wireframe
+                    </label>
+                  )}
+                </>
               )}
               {/* Show/hide the initial stock block (transparent) */}
               <label style={{ display: 'block', marginBottom: 4 }}>
@@ -1371,9 +1373,9 @@ const StartPage: React.FC = () => {
                         )}
                         <button
                           style={{ marginTop: 8 }}
+                          disabled={toolpath_points_ref.current.length === 0}
                           onClick={() => {
-                            if (!box_bounds) return;
-                            // Generate G-code for this carve operation's toolpath
+                            if (!box_bounds || toolpath_points_ref.current.length === 0) return;
                             const gcode = generate_gcode(toolpath_points_ref.current, { safe_z: box_bounds.max.z + 5 });
                             const blob = new Blob([gcode], { type: 'text/plain' });
                             const url = URL.createObjectURL(blob);
@@ -1533,6 +1535,7 @@ const StartPage: React.FC = () => {
                         )}
                         <button
                           style={{ marginTop: 8 }}
+                          disabled={!flatten_toolpath || flatten_toolpath.length === 0}
                           onClick={() => {
                             if (!flatten_toolpath || flatten_toolpath.length === 0 || !box_bounds) return;
                             const gcode = generate_gcode([flatten_toolpath], { safe_z: box_bounds.max.z + 5 });
@@ -1651,7 +1654,10 @@ const StartPage: React.FC = () => {
                     );
                   })()}
                 </form>
-                <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
+                {/* No generate button for stock operation */}
+                {operations[selected_operation_index]?.type !== 'stock' && (
+                  <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
+                )}
                 {generate_timings && (
                   <div style={{ marginTop: 8, color: '#aaa', fontSize: '0.95em' }}>
                     <div><strong>Timing (ms):</strong></div>
