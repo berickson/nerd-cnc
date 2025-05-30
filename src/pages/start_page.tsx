@@ -1283,6 +1283,26 @@ const StartPage: React.FC = () => {
                           °
                         </label>
                       )}
+                      <label>
+                        Step Over (%)
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          step="any"
+                          value={op.params.step_over_percent}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'carve'
+                                ? { ...op2, params: { ...op2.params, step_over_percent: v } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        %
+                      </label>
                       <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
                       <button
                         disabled={simulation_dirty}
@@ -1447,6 +1467,26 @@ const StartPage: React.FC = () => {
                           °
                         </label>
                       )}
+                      <label>
+                        Step Over (%)
+                        <input
+                          type="number"
+                          min={1}
+                          max={100}
+                          step="any"
+                          value={op.params.step_over_percent}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            set_operations(ops => ops.map((op2, idx) =>
+                              idx === selected_operation_index && op2.type === 'flatten'
+                                ? { ...op2, params: { ...op2.params, step_over_percent: v } }
+                                : op2
+                            ));
+                            set_simulation_dirty(true);
+                          }}
+                        />
+                        %
+                      </label>
                       <button style={{ width: '100%' }} onClick={handle_generate} disabled={generating || !simulation_dirty}>Generate</button>
                       <button 
                         disabled={!flatten_toolpath || flatten_toolpath.length === 0}
@@ -1614,24 +1654,6 @@ const StartPage: React.FC = () => {
                   }}
                   style={{ width: 80, marginLeft: 8 }}
                 />
-              </label>
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                Tool Step Over (% of Cutter Diameter)
-                <input
-                  type='number'
-                  min={0.05}
-                  max={1.0}
-                  step="any"
-                  value={step_over_percent}
-                  onChange={e => {
-                    set_step_over_percent(Number(e.target.value));
-                    set_simulation_dirty(true);
-                  }}
-                  style={{ width: 80, marginLeft: 8 }}
-                />
-                <span style={{ marginLeft: 8, color: '#aaa', fontSize: '0.95em' }}>
-                  (lower = smoother, slower)
-                </span>
               </label>
             </div>
             {/* Visibility Section */}
