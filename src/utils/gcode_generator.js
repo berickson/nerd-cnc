@@ -36,3 +36,4 @@ function generate_gcode(toolpaths, options = {}) {
 }
 
 module.exports = { generate_gcode };
+ 
