@@ -1053,98 +1053,16 @@ const StartPage: React.FC = () => {
           )}
         </div>
         {/* File Section (always visible) */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
-          <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
-          <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
-            Start with Blank Stock
-          </button>
-        </div>
-        {/* Hide all other controls until stock is defined */}
-        {stock_defined && (
-          <>
-            {/* Calculation Parameters Section */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                Toolpath Grid Resolution
-                <input
-                  type="number"
-                  min={20}
-                  max={1000}
-                  step="any"
-                  value={toolpath_grid_resolution}
-                  onChange={e => {
-                    set_toolpath_grid_resolution(Number(e.target.value));
-                    set_simulation_dirty(true);
-                  }}
-                  style={{ width: 80, marginLeft: 8 }}
-                />
-              </label>
-            </div>
-            {/* Visibility Section */}
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
-              {/* Show/hide the original STL model, with option for wireframe */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
-                Show STL Model
-              </label>
-              {show_mesh && (
-                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-                  <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
-                  Show as Wireframe
-                </label>
-              )}
-              {/* Show/hide the initial stock block (transparent) */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_initial_stock} onChange={e => set_show_initial_stock(e.target.checked)} />{' '}
-                Show Stock (Initial Block)
-              </label>
-              {/* Show/hide the carved result (simulated stock), with option for wireframe */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
-                Show Carved Result
-              </label>
-              {show_stock && (
-                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
-                  <input type="checkbox" checked={show_stock_wireframe} onChange={e => set_show_stock_wireframe(e.target.checked)} />{' '}
-                  Show as Wireframe
-                </label>
-              )}
-              {/* Show/hide the toolpath lines */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
-                Show Toolpath
-              </label>
-              {/* Show/hide the bounding box */}
-              <label style={{ display: 'block', marginBottom: 4 }}>
-                <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
-                Show Bounding Box
-              </label>
-              {/* Bounding Box Info and Controls */}
-              <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
-                <div>
-                  <strong>Bounding Box:</strong>{' '}
-                  {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <strong>3D Controls:</strong>
-                  <div>
-                    Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
-                    Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
-                    Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </>
+        {!stock_defined && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontWeight: 'bold', marginBottom: 4, fontSize: '1.05em' }}>File</div>
+            <input type="file" accept=".stl" onChange={handle_file_change} style={{ width: '100%', marginBottom: 8 }} />
+            <button style={{ width: '100%', fontWeight: 600, background: '#fff', color: '#222', border: 'none', borderRadius: 4, padding: '8px 0', boxShadow: '0 1px 4px #0002', cursor: 'pointer', transition: 'background 0.2s' }} onClick={handle_start_blank_stock}>
+              Start with Blank Stock
+            </button>
+          </div>
         )}
-        {/* Divider and operations panel (already stock_defined-gated below) */}
-        {stock_defined && (
-          <hr style={{ border: 0, borderTop: '1px solid #444', margin: '16px 0' }} />
-        )}
-        {/* Show operations and per-operation controls only if stock is defined */}
+                {/* Show operations and per-operation controls only if stock is defined */}
         {stock_defined ? (
           <>
             {/* Operations Section */}
@@ -1684,6 +1602,91 @@ const StartPage: React.FC = () => {
             </div>
           </>
         ) : null}
+
+        {/* Hide all other controls until stock is defined */}
+        {stock_defined && (
+          <>
+            {/* Calculation Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Calculation</div>
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                Toolpath Grid Resolution
+                <input
+                  type="number"
+                  min={20}
+                  max={1000}
+                  step="any"
+                  value={toolpath_grid_resolution}
+                  onChange={e => {
+                    set_toolpath_grid_resolution(Number(e.target.value));
+                    set_simulation_dirty(true);
+                  }}
+                  style={{ width: 80, marginLeft: 8 }}
+                />
+              </label>
+            </div>
+            {/* Visibility Section */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 'bold', marginBottom: 4 }}>Visibility</div>
+              {/* Show/hide the original STL model, with option for wireframe */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_mesh} onChange={e => set_show_mesh(e.target.checked)} />{' '}
+                Show STL Model
+              </label>
+              {show_mesh && (
+                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                  <input type="checkbox" checked={show_wireframe} onChange={e => set_show_wireframe(e.target.checked)} />{' '}
+                  Show as Wireframe
+                </label>
+              )}
+              {/* Show/hide the initial stock block (transparent) */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_initial_stock} onChange={e => set_show_initial_stock(e.target.checked)} />{' '}
+                Show Stock (Initial Block)
+              </label>
+              {/* Show/hide the carved result (simulated stock), with option for wireframe */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_stock} onChange={e => set_show_stock(e.target.checked)} />{' '}
+                Show Carved Result
+              </label>
+              {show_stock && (
+                <label style={{ display: 'block', marginBottom: 4, marginLeft: 24 }}>
+                  <input type="checkbox" checked={show_stock_wireframe} onChange={e => set_show_stock_wireframe(e.target.checked)} />{' '}
+                  Show as Wireframe
+                </label>
+              )}
+              {/* Show/hide the toolpath lines */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_toolpath} onChange={e => set_show_toolpath(e.target.checked)} />{' '}
+                Show Toolpath
+              </label>
+              {/* Show/hide the bounding box */}
+              <label style={{ display: 'block', marginBottom: 4 }}>
+                <input type="checkbox" checked={show_bounding_box} onChange={e => set_show_bounding_box(e.target.checked)} />{' '}
+                Show Bounding Box
+              </label>
+              {/* Bounding Box Info and Controls */}
+              <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
+                <div>
+                  <strong>Bounding Box:</strong>{' '}
+                  {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <strong>3D Controls:</strong>
+                  <div>
+                    Rotate: <kbd>Left Mouse</kbd> &nbsp;|&nbsp;
+                    Zoom: <kbd>Scroll</kbd> &nbsp;|&nbsp;
+                    Pan: <kbd>Right Mouse</kbd> or <kbd>Ctrl + Left Mouse</kbd>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+        {/* Divider and operations panel (already stock_defined-gated below) */}
+        {stock_defined && (
+          <hr style={{ border: 0, borderTop: '1px solid #444', margin: '16px 0' }} />
+        )}
       </div>
       <div ref={mount_ref} style={{ width: '100vw', height: '100vh' }} />
     </div>
