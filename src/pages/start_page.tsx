@@ -900,7 +900,12 @@ const StartPage: React.FC = () => {
   // Export flatten toolpath as G-code
   function handle_export_flatten_gcode() {
     if (!flatten_toolpath || flatten_toolpath.length === 0 || !box_bounds) return;
-    const gcode = generate_gcode([flatten_toolpath], { safe_z: box_bounds.max.z + 5 });
+    const gcode = generate_gcode([flatten_toolpath], {
+      safe_z: box_bounds.max.z + 5,
+      origin_z: box_bounds.max.z, // Make Z=0 at top of stock
+      feedrate: 1000, // mm/min
+      spindle_speed: 13000 // rpm
+    });
     const blob = new Blob([gcode], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1310,7 +1315,11 @@ const StartPage: React.FC = () => {
                         onClick={() => {
                           if (!box_bounds) return;
                           // Generate G-code for this carve operation's toolpath
-                          const gcode = generate_gcode(toolpath_points_ref.current, { safe_z: box_bounds.max.z + 5 });
+                          const gcode = generate_gcode(toolpath_points_ref.current, {
+                            safe_z: box_bounds.max.z + 5,
+                            feedrate: 1000, // mm/min
+                            spindle_speed: 13000 // rpm
+                          });
                           const blob = new Blob([gcode], { type: 'text/plain' });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
@@ -1493,7 +1502,10 @@ const StartPage: React.FC = () => {
                         style={{ marginTop: 8 }}
                         onClick={() => {
                           if (!flatten_toolpath || flatten_toolpath.length === 0 || !box_bounds) return;
-                          const gcode = generate_gcode([flatten_toolpath], { safe_z: box_bounds.max.z + 5 });
+                          const gcode = generate_gcode([flatten_toolpath], {
+                            safe_z: box_bounds.max.z + 5,
+                            origin_z: box_bounds.max.z // Make Z=0 at top of stock
+                          });
                           const blob = new Blob([gcode], { type: 'text/plain' });
                           const url = URL.createObjectURL(blob);
                           const a = document.createElement('a');
