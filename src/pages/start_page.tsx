@@ -254,12 +254,7 @@ const StartPage: React.FC = () => {
       // Use a visually distinct, solid material for clarity
       mesh.material = new THREE.MeshNormalMaterial({ flatShading: true });
       // Validate geometry before adding to scene
-      if (!validate_geometry_positions(mesh.geometry, 'stock_mesh')) {
-        console.error('[stock_mesh] Invalid geometry, not adding to scene. First 10 positions:',
-          mesh.geometry.attributes.position.array.slice(0, 30));
-      } else {
-        scene.add(mesh);
-      }
+      scene.add(mesh);
     }
   }, [show_stock, box_bounds, scene_ref.current, stock_update_counter]);
 
@@ -717,14 +712,8 @@ const StartPage: React.FC = () => {
       const material = new THREE.MeshPhongMaterial({ color: 0x2196f3, flatShading: true });
       const mesh = new THREE.Mesh(geometry, material);
       mesh.userData.is_stl = true;
-      // Validate geometry before adding to scene
-      if (!validate_geometry_positions(mesh.geometry, 'stl_mesh')) {
-        console.error('[stl_mesh] Invalid geometry, not adding to scene. First 10 positions:',
-          mesh.geometry.attributes.position.array.slice(0, 30));
-      } else {
-        scene_ref.current!.add(mesh);
-        mesh.visible = show_mesh;
-      }
+      scene_ref.current!.add(mesh);
+      mesh.visible = show_mesh;
 
       // Compute and set bounding box for the new mesh
       geometry.computeBoundingBox();
@@ -1065,37 +1054,6 @@ const StartPage: React.FC = () => {
       }
     };
   }
-
-// Utility: validate geometry positions
-function validate_geometry_positions(geometry: THREE.BufferGeometry, label: string): boolean {
-  if (!geometry || !geometry.attributes || !geometry.attributes.position) {
-    console.warn(`[${label}] geometry missing position attribute`, geometry);
-    return false;
-  }
-  const pos = geometry.attributes.position;
-  if (!pos.array || pos.count === 0) {
-    console.warn(`[${label}] geometry position array empty`, geometry);
-    return false;
-  }
-  for (let i = 0; i < pos.count * pos.itemSize; ++i) {
-    if (!Number.isFinite(pos.array[i])) {
-      const start = Math.max(0, i - 10);
-      const end = Math.min(pos.array.length, i + 10);
-      console.warn(
-        `[${label}] geometry position contains NaN/invalid at index`, i,
-        'value:', pos.array[i],
-        'window:', pos.array.slice(start, end),
-        geometry
-      );
-      return false;
-    }
-  }
-  if (geometry.boundingSphere && !Number.isFinite(geometry.boundingSphere.radius)) {
-    console.warn(`[${label}] geometry boundingSphere radius is NaN`, geometry);
-    return false;
-  }
-  return true;
-}
 
   return (
     <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
