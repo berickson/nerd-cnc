@@ -10,6 +10,7 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils';
 import '../global.css'
+import { generate_safe_toolpath_js } from '../utils/safe_toolpath.js';
 declare global {
   interface Window {
     current_heightmap?: any;
@@ -486,12 +487,10 @@ const StartPage: React.FC = () => {
     setTimeout(() => set_show_stock(true), 0)
   }
 
-  function handle_generate() {
+  async function handle_generate() {
     if (!box_bounds) return;
     const selected_op = operations[selected_operation_index];
     if (!selected_op) return;
-
-    // Only access tool-related properties for carve or flatten operations
     let tool = undefined;
     let step_over = 0;
     let toolpath_grid_resolution = 2000;
@@ -499,9 +498,8 @@ const StartPage: React.FC = () => {
       tool = selected_op.params.tool;
       step_over = tool.cutter_diameter * selected_op.params.step_over_percent / 100;
       toolpath_grid_resolution = selected_op.params.toolpath_grid_resolution;
-      // Carve operation: use heightmap_from_mesh and stl_geometry
       if (!stl_geometry) return;
-      const max_z = box_bounds.max.z + 0.010; // Start just above the stock
+      const max_z = box_bounds.max.z + 0.010;
       const grid = {
         min_x: box_bounds.min.x,
         max_x: box_bounds.max.x,
@@ -511,7 +509,6 @@ const StartPage: React.FC = () => {
         res_y: toolpath_grid_resolution,
       };
       const heightmap = heightmap_from_mesh(stl_geometry, grid);
-      // remove all existing toolpath lines from the scene
       scene_ref.current!.children
         .filter(obj => obj.userData.is_tool_path)
         .forEach(obj => scene_ref.current!.remove(obj));
@@ -538,24 +535,53 @@ const StartPage: React.FC = () => {
       toolpath_points_ref.current = [];
       let reverse = false;
       const points_per_line = 200;
+      // --- Build toolpath XY points (no Z yet) ---
+      let toolpath_xy_lines: { x: number; y: number }[][] = [];
       for (
         let y_idx = 0;
         y_idx < grid.res_y;
         y_idx += Math.max(1, Math.round(step_over / ((box_bounds.max.y - box_bounds.min.y) / grid.res_y)))
       ) {
         const y = box_bounds.min.y + (box_bounds.max.y - box_bounds.min.y) * (y_idx / grid.res_y);
-        const line_points: THREE.Vector3[] = [];
+        const line_points: { x: number; y: number }[] = [];
         for (
           let x_idx = 0;
           x_idx < grid.res_x;
           x_idx += Math.max(1, Math.floor(grid.res_x / points_per_line))
         ) {
           const x = box_bounds.min.x + (box_bounds.max.x - box_bounds.min.x) * (x_idx / grid.res_x);
-          const z = heightmap[y_idx][x_idx] > -Infinity ? heightmap[y_idx][x_idx] + 0.001 : box_bounds.min.z;
-          line_points.push(new THREE.Vector3(x, y, z));
+          line_points.push({ x, y });
         }
         if (reverse) line_points.reverse();
-        toolpath_points_ref.current.push(line_points.map(pt => ({ x: pt.x, y: pt.y, z: pt.z })));
+        toolpath_xy_lines.push(line_points);
+        reverse = !reverse;
+      }
+      // --- Flatten all XY points for WASM call ---
+      const toolpath_xy_flat = toolpath_xy_lines.flat();
+      // --- Prepare grid info for WASM ---
+      const grid_size_x = (box_bounds.max.x - box_bounds.min.x) / (grid.res_x - 1);
+      const grid_size_y = (box_bounds.max.y - box_bounds.min.y) / (grid.res_y - 1);
+      const safe_grid = {
+        nx: grid.res_x,
+        ny: grid.res_y,
+        grid_size_x,
+        grid_size_y,
+        origin_x: box_bounds.min.x,
+        origin_y: box_bounds.min.y
+      };
+      // --- Call WASM to get safe Z for each (x, y) ---
+      const toolpath_xy_flat_wasm = toolpath_xy_lines.flat();
+      const safe_zs = await generate_safe_toolpath_js(heightmap, safe_grid, tool, toolpath_xy_flat_wasm);
+      // --- Rebuild toolpath_points_ref.current with safe Z ---
+      let safe_idx = 0;
+      toolpath_points_ref.current = toolpath_xy_lines.map(line =>
+        line.map(pt => {
+          const z = safe_zs[safe_idx++];
+          return { x: pt.x, y: pt.y, z };
+        })
+      );
+      // --- Visualization and simulation (unchanged) ---
+      for (const line_points of toolpath_points_ref.current) {
         const positions = [];
         for (const pt of line_points) {
           positions.push(pt.x, pt.y, pt.z);
@@ -572,10 +598,9 @@ const StartPage: React.FC = () => {
         line.computeLineDistances();
         line.userData.is_tool_path = true;
         scene_ref.current!.add(line);
-        line.visible = show_toolpath
-        reverse = !reverse;
+        line.visible = show_toolpath;
       }
-      // Log toolpath extents for debugging
+      // --- Log toolpath extents for debugging (unchanged) ---
       if (toolpath_points_ref.current.length > 0) {
         let min_tx = Infinity, max_tx = -Infinity;
         let min_ty = Infinity, max_ty = -Infinity;
@@ -603,7 +628,7 @@ const StartPage: React.FC = () => {
       window.current_heightmap = stock;
       set_stock_update_counter((c: number) => c + 1);
       set_show_stock(false);
-      setTimeout(() => set_show_stock(true), 0)
+      setTimeout(() => set_show_stock(true), 0);
     } else if (selected_op.type === 'flatten') {
       // Flatten operation: do NOT use heightmap_from_mesh or stl_geometry
       tool = selected_op.params.tool;
