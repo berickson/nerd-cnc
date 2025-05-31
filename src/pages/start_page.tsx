@@ -730,6 +730,7 @@ const StartPage: React.FC = () => {
       set_show_stock(false);
       setTimeout(() => set_show_stock(true), 0);
     }
+    set_simulation_dirty(false);
   }
 
   function handle_file_change(event: React.ChangeEvent<HTMLInputElement>) {
@@ -1369,6 +1370,7 @@ const StartPage: React.FC = () => {
                           if (!box_bounds) return;
                           // Generate G-code for this carve operation's toolpath
                           const gcode = generate_gcode(toolpath_points_ref.current, {
+                            origin_z: box_bounds.max.z, // Make Z=0 at top of stock
                             safe_z: box_bounds.max.z + 5,
                             feedrate: 1000, // mm/min
                             spindle_speed: 13000 // rpm
