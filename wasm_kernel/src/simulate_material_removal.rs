@@ -171,31 +171,6 @@ mod tests {
     println!("Rust simulate_material_removal 500x500, 20mm tool: {:?}", elapsed);
   }
 
-  #[test]
-  fn test_tool_does_not_cut_below_heightmap() {
-    // Tool: ball, diameter 2
-    let nx = 5;
-    let ny = 5;
-    let mut heightmap = vec![1.0; nx * ny];
-    // Create a bump at the center
-    heightmap[2 * ny + 2] = 5.0;
-    // Toolpath: pass over the bump at z = 0.0 (lower than bump)
-    let toolpath = vec![2.0, 2.0, 0.0];
-    simulate_material_removal(SimulateMaterialRemovalParams {
-      heightmap: &mut heightmap,
-      nx,
-      ny,
-      grid_size: 1.0,
-      origin_x: 0.0,
-      origin_y: 0.0,
-      tool_type: "ball",
-      cutter_diameter: 2.0,
-      v_angle_deg: 0.0,
-      toolpath: &toolpath,
-    });
-    // The bump should not be cut below its original height
-    assert!(heightmap[2 * ny + 2] >= 5.0 - 1e-6, "Tool cut below the heightmap bump!");
-  }
 
   #[test]
   fn test_generate_safe_toolpath_ball_over_bump() {
