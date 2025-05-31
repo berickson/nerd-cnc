@@ -85,7 +85,6 @@ const StartPage: React.FC = () => {
   //////////////////////////////////////////////////////////
   // react state hooks
 
-  const [boxSize, set_box_size] = React.useState<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
   const [box_bounds, set_box_bounds] = React.useState<{ min: THREE.Vector3, max: THREE.Vector3 } | null>(null); const [show_mesh, set_show_mesh] = React.useState(true);
   const [show_toolpath, set_show_toolpath] = React.useState(true);
   const [show_bounding_box, set_show_bounding_box] = React.useState(true);
@@ -355,7 +354,6 @@ const StartPage: React.FC = () => {
     // Set bounding box size in state
     const size = new THREE.Vector3();
     box.getSize(size);
-    set_box_size(size);
     set_box_bounds({ min: box.min.clone(), max: box.max.clone() });
 
 
@@ -635,7 +633,7 @@ const StartPage: React.FC = () => {
       step_over = tool.cutter_diameter * selected_op.params.step_over_percent / 100;
       // Remove all existing toolpath lines from the scene
       scene_ref.current!.children
-        .filter(obj => obj.userData.is_tool_path)
+        .filter(obj => obj.userData.is_tool_path && obj.userData.operation === 'flatten')
         .forEach(obj => scene_ref.current!.remove(obj));
       // Generate a raster toolpath for flattening the top face
       const min_x = box_bounds.min.x;
@@ -738,7 +736,6 @@ const StartPage: React.FC = () => {
     const file = event.target.files?.[0];
     if (!file || !scene_ref.current) return;
 
-    set_box_size(new THREE.Vector3(0, 0, 0));
     const reader = new FileReader();
     reader.onload = function (e) {
       const contents = e.target?.result;
@@ -802,7 +799,6 @@ const StartPage: React.FC = () => {
     const min = new THREE.Vector3(0, 0, 0);
     const max = new THREE.Vector3(100, 100, 20);
     set_box_bounds({ min, max });
-    set_box_size(new THREE.Vector3(100, 100, 20));
     set_stl_geometry(null); // No STL loaded
     set_simulation_dirty(true);
     // Add bounding box helper for blank stock
@@ -1622,7 +1618,6 @@ const StartPage: React.FC = () => {
                                 ? { ...o, params: { ...((o as StockOperation).params), width } }
                                 : o
                             ));
-                            set_box_size(size => new THREE.Vector3(width, op.params.height, op.params.thickness));
                             set_box_bounds(bounds => bounds ? { min: bounds.min, max: new THREE.Vector3(bounds.min.x + width, bounds.min.y + op.params.height, bounds.min.z + op.params.thickness) } : bounds);
                             set_simulation_dirty(true);
                             rerun_carve_if_needed(width, op.params.height, op.params.thickness);
@@ -1643,7 +1638,6 @@ const StartPage: React.FC = () => {
                                 ? { ...o, params: { ...((o as StockOperation).params), height } }
                                 : o
                             ));
-                            set_box_size(size => new THREE.Vector3(op.params.width, height, op.params.thickness));
                             set_box_bounds(bounds => bounds ? { min: bounds.min, max: new THREE.Vector3(bounds.min.x + op.params.width, bounds.min.y + height, bounds.min.z + op.params.thickness) } : bounds);
                             set_simulation_dirty(true);
                             rerun_carve_if_needed(op.params.width, height, op.params.thickness);
@@ -1664,7 +1658,6 @@ const StartPage: React.FC = () => {
                                 ? { ...o, params: { ...((o as StockOperation).params), thickness } }
                                 : o
                             ));
-                            set_box_size(size => new THREE.Vector3(op.params.width, op.params.height, thickness));
                             set_box_bounds(bounds => bounds ? { min: bounds.min, max: new THREE.Vector3(bounds.min.x + op.params.width, bounds.min.y + op.params.height, bounds.min.z + thickness) } : bounds);
                             set_simulation_dirty(true);
                             rerun_carve_if_needed(op.params.width, op.params.height, thickness);
@@ -1767,7 +1760,7 @@ const StartPage: React.FC = () => {
               <div style={{ marginTop: 20, color: '#ccc', fontSize: '0.95em' }}>
                 <div>
                   <strong>Bounding Box:</strong>{' '}
-                  {boxSize && `${boxSize.x.toFixed(2)} × ${boxSize.y.toFixed(2)} × ${boxSize.z.toFixed(2)}`}
+                  {box_bounds ? new THREE.Vector3().subVectors(box_bounds.max, box_bounds.min).toArray().map(v => v.toFixed(2)).join(' × ') : 'N/A'}
                 </div>
                 <div style={{ marginTop: 8 }}>
                   <strong>3D Controls:</strong>
