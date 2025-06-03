@@ -98,6 +98,7 @@ flowchart TD
   J -- Yes --> K[Add More Operations in Sequence]
   K --> F
   J -- No --> L[Done]
+```
 
 ## Flatten Operation Workflow
 
