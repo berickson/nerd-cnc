@@ -81,6 +81,24 @@
 ## Tool library
 - [ ] You can define the endmills that you own, and pick them from a list for operations
 
+## Operation Creation Workflow (Mermaid Diagram)
+
+```mermaid
+flowchart TD
+  A[Launch Application] --> B[Set Up Stock]
+  B -->|Option A: Load STL| C[Load 3D Model]
+  B -->|Option B: Manual Entry| D[Enter Stock Dimensions]
+  C --> E[Pick or Add Operation]
+  D --> E
+  E --> F[Configure Operation Parameters]
+  F --> G[Preview & Simulate]
+  G --> H[Generate & Export G-code]
+  H --> I[Print/Export Checklist]
+  I --> J{Multi-part Workflow?}
+  J -- Yes --> K[Add More Operations in Sequence]
+  K --> F
+  J -- No --> L[Done]
+
 ## Flatten Operation Workflow
 
 - [x] **Flatten operation** (first-class workflow step)
