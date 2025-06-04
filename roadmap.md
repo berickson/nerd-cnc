@@ -169,3 +169,17 @@ flowchart TD
 ## Ideas / Wishlist
 - [ ] Playback/scrub through toolpath simulation
 - [ ] Save/load project state
+
+## Contour Carving
+- [ ] Implement contour strategy for toolpath generation
+  - [ ] Extract contours from heightmap using marching squares at regular Z intervals
+  - [ ] (Optional) Extract contours from mesh using mesh slicing for full 3D
+  - [ ] Offset contours by tool geometry (flat, ball, V-bit, etc.) at each Z
+  - [ ] Use 2D polygon offsetting (Minkowski sum) for flat and ball tools
+  - [ ] Compute effective tool radius at each Z for V-bit and tapered tools
+  - [ ] Order contours for efficient machining (outer to inner or vice versa)
+  - [ ] Generate G-code/toolpath for each contour
+  - [ ] Visualize and simulate contour toolpaths
+  - [ ] Add UI options for contour step size, tool selection, and cut direction
+  - [ ] Research/choose libraries for marching squares and 2D offsetting (e.g., clipper.js)
+  - [ ] Document assumptions and edge cases (e.g., overhangs, islands, holes)
