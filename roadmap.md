@@ -1,5 +1,13 @@
 # Project Roadmap & TODO
 
+## Use Cases
+- [ ] Carve out a thick relief from rough stock
+ - 1. Flatten the side of the rough stock using a flat bit
+ - 2. Turn it over
+ - 2. Rough-Clear out material from the top side using multiple passes of a flat bit with a configurable max-cut depth leaving 1mm or so above the image
+ - 3. Final pass with the fine-ball tip of the tapered bit at a low step-over 
+ - 4. Cut the relief out from the stock using an 1/8 down cut end -mill
+
 ## Issues
 - [x] Green material for stock is unappealing and doesn't pop out enough. The object stock material looks much better, but we need to be able to tell them apart.
 - [ ] Material is removed discretely along toolpath, and not continuosly, making it look as if the tool is set down at individual points along the path instead of dragged along the path
@@ -183,3 +191,13 @@ flowchart TD
   - [ ] Add UI options for contour step size, tool selection, and cut direction
   - [ ] Research/choose libraries for marching squares and 2D offsetting (e.g., clipper.js)
   - [ ] Document assumptions and edge cases (e.g., overhangs, islands, holes)
+
+## Thick Relief Workflow Support
+- [ ] Multi-pass roughing: clear out material in multiple passes with configurable max cut depth and stock-to-leave (e.g., 1mm above surface)
+- [ ] Finishing pass: generate toolpaths for a fine ball/tapered bit with low step-over for smooth finish
+- [ ] Cutout operation: cut the relief out from the stock using a suitable endmill (e.g., 1/8" downcut), with support for tabs/bridges
+- [ ] Multi-part workflow: support sequencing of operations (flatten, rough, finish, cutout, flip, repeat)
+- [ ] Workflow checklist: generate printable step-by-step instructions for the user
+- [ ] Per-operation G-code export: generate and export G-code for each step or as a combined job
+- [ ] Enhanced simulation: simulate and visualize each operation step-by-step, showing material removal and current stock state
+- [ ] UI for operation sequencing: allow user to define, reorder, and configure operations in a workflow
