@@ -46,112 +46,6 @@ function create_heightmap_stock(width, height, grid_cells_x, grid_cells_y, initi
   };
 }
 
-// Simulate material removal for a flat, ball, or vbit endmill along a toolpath
-// Assumptions:
-// - Tool zero position is the center of the tip (x, y, z)
-// - Only update grid cells if the new z is lower than the current height
-// - Flat: cuts a flat-bottomed cylinder at z=pt.z
-// - Ball: cuts a hemisphere, tip at z=pt.z, surface at z=pt.z + sqrt(r^2 - d^2) - r
-// - V-bit: cuts a cone, tip at z=pt.z, surface at z=pt.z + d / tan(v_angle/2)
-function old__see_rust_version_simulate_material_removal(stock, tool, toolpath) {
-  if (toolpath.length === 0) {
-    console.log('Toolpath is empty, no material removal simulated.');
-    return;
-  }
-
-  const timings = {};
-  const t_start = performance.now();
-
-  const r = tool.cutter_diameter / 2;
-  const step = stock.grid_size_x;
-  const nx = Math.round(stock.width / stock.grid_size_x) + 1;
-  const ny = Math.round(stock.height / stock.grid_size_y) + 1;
-
-  // Precompute vbit angle math if needed
-  let v_angle_rad, tan_half_angle;
-  if (tool.type === 'vbit') {
-    v_angle_rad = (tool.v_angle * Math.PI) / 180;
-    tan_half_angle = Math.tan(v_angle_rad / 2);
-  }
-
-  // 1. Precompute tool elevation grid
-  const t_grid_start = performance.now();
-  const tool_grid_radius = Math.ceil(r / step);
-  const tool_grid_size = tool_grid_radius * 2 + 1;
-  const tool_elevation_grid = [];
-  for (let ix = 0; ix < tool_grid_size; ix++) {
-    tool_elevation_grid[ix] = [];
-    for (let iy = 0; iy < tool_grid_size; iy++) {
-      const x = (ix - tool_grid_radius) * step;
-      const y = (iy - tool_grid_radius) * step;
-      const distance = Math.sqrt(x * x + y * y);
-      let dz = null;
-      if (distance > r + 1e-6) {
-        dz = null;
-      } else if (tool.type === 'flat') {
-        dz = 0;
-      } else if (tool.type === 'ball') {
-        dz = r - Math.sqrt(Math.max(0, r * r - distance * distance));
-      } else if (tool.type === 'vbit') {
-        if (tan_half_angle > 1e-8) {
-          dz = distance / tan_half_angle;
-        } else {
-          dz = null;
-        }
-      }
-      tool_elevation_grid[ix][iy] = dz;
-    }
-  }
-  timings.tool_grid = performance.now() - t_grid_start;
-
-  // 2. Main toolpath loop
-  const t_toolpath_start = performance.now();
-  let update_count = 0;
-  for (const pt of toolpath) {
-    if (tool.type === 'flat' && tool.cutter_diameter <= step + 1e-6) {
-      // Special case: very thin flat endmill, only cut the center cell
-      if (stock.get_height(pt.x, pt.y) > pt.z) {
-        stock.set_height(pt.x, pt.y, pt.z);
-        update_count++;
-      }
-      continue;
-    }
-    // Compute tool center in grid indices for this pt
-    const tool_cx = Math.round((pt.x - stock.origin_x) / step);
-    const tool_cy = Math.round((pt.y - stock.origin_y) / step);
-    for (let dx = -tool_grid_radius; dx <= tool_grid_radius; dx++) {
-      for (let dy = -tool_grid_radius; dy <= tool_grid_radius; dy++) {
-        const ix = tool_cx + dx;
-        const iy = tool_cy + dy;
-        if (
-          ix < 0 || iy < 0 || ix >= nx || iy >= ny
-        ) {
-          continue;
-        }
-        const grid_ix = dx + tool_grid_radius;
-        const grid_iy = dy + tool_grid_radius;
-        const dz = tool_elevation_grid[grid_ix][grid_iy];
-        if (dz === null) continue;
-        const x = stock.origin_x + ix * step;
-        const y = stock.origin_y + iy * step;
-        const z = pt.z + dz;
-        if (stock.get_height(x, y) > z) {
-          stock.set_height(x, y, z);
-          update_count++;
-        }
-      }
-    }
-  }
-  timings.toolpath_loop = performance.now() - t_toolpath_start;
-  timings.total = performance.now() - t_start;
-  timings.grid_updates = update_count;
-  if (typeof window !== 'undefined') {
-    window.last_simulation_timings = timings;
-  }
-  // Optionally log timings for profiling
-  console.log('[simulate_material_removal] timings:', timings);
-}
-
 // WASM kernel import and async init
 let wasm_mod = null;
 let wasm_ready = false;
@@ -218,6 +112,7 @@ function heightmap_to_solid_mesh(stock, min_z) {
       return new THREE.Mesh(geometry, material);
     } catch (e) {
       console.warn('[stock_simulator] WASM mesh generation failed, falling back to JS:', e);
+      alert('[stock_simulator] WASM mesh generation failed, falling back to JS. Check console for details.');
     }
   }
   // Fallback: use JS version
